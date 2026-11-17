@@ -14,10 +14,10 @@ export class CameraController {
     this.sensitivity = 0.0025;
 
     this.target = new THREE.Vector3();
-    this.cameraPosition = new THREE.Vector3();
-    this.direction = new THREE.Vector3();
-    this.viewDirection = new THREE.Vector3();
+    this.orbitDirection = new THREE.Vector3();
     this.right = new THREE.Vector3();
+    this.cameraOffset = new THREE.Vector3();
+    this.lookTarget = new THREE.Vector3();
 
     this.shoulderOffset = new THREE.Vector3();
     this.targetShoulderOffset = new THREE.Vector3();
@@ -26,12 +26,12 @@ export class CameraController {
 
     this.initialized = false;
 
-    // Look freely up and down without flipping.
-    this.minPitch = -1.15;
-    this.maxPitch = 1.48;
+    // Mouse down looks down; mouse up looks up.
+    this.minPitch = -1.05;
+    this.maxPitch = 1.05;
 
     this.collisionPadding = 0.35;
-    this.minimumDistance = 0.65;
+    this.minimumDistance = 0.8;
   }
 
   update(dt, player, colliders = []) {
@@ -64,63 +64,52 @@ export class CameraController {
       this.maxPitch
     );
 
-    // Character upper-body focus.
+    // Focus on the character's upper body.
     this.target.set(
       player.position.x,
-      player.position.y + 0.85,
+      player.position.y + 0.95,
       player.position.z
     );
 
     if (!this.initialized) {
-      this.initialized = true;
       this.distance = this.targetDistance;
+      this.initialized = true;
     }
 
-    // Camera remains BEHIND the character.
-    // Vertical mouse movement changes the viewing direction,
-    // NOT the camera's orbit around the character.
-    const horizontalBack = new THREE.Vector3(
-      Math.sin(this.yaw),
-      0,
-      Math.cos(this.yaw)
-    );
+    // TRUE THIRD-PERSON ORBIT:
+    // The camera moves around the character when pitch changes.
+    // It does not simply tilt from a fixed camera position.
+    const cosPitch = Math.cos(this.pitch);
+    const sinPitch = Math.sin(this.pitch);
 
-    this.cameraPosition.copy(this.target);
+    this.orbitDirection.set(
+      Math.sin(this.yaw) * cosPitch,
+      -sinPitch,
+      Math.cos(this.yaw) * cosPitch
+    ).normalize();
 
-    this.cameraPosition.addScaledVector(
-      horizontalBack,
-      this.targetDistance
-    );
+    // Desired camera offset from the character.
+    this.cameraOffset
+      .copy(this.orbitDirection)
+      .multiplyScalar(this.targetDistance);
 
-    // Keep camera at normal third-person height.
-    this.cameraPosition.y += 0.45;
-
-    // Camera collision detection.
+    // Check for walls and obstacles between player and camera.
     const meshes = colliders
       .map(c => c.mesh)
       .filter(
         mesh => mesh && mesh.isObject3D && mesh.visible
       );
 
-    const cameraOffset = new THREE.Vector3()
-      .subVectors(this.cameraPosition, this.target);
-
-    const rayDistance = cameraOffset.length();
-
     let safeDistance = this.targetDistance;
 
-    if (meshes.length > 0 && rayDistance > 0) {
-      this.direction
-        .copy(cameraOffset)
-        .normalize();
-
+    if (meshes.length > 0) {
       this.raycaster.set(
         this.target,
-        this.direction
+        this.orbitDirection
       );
 
       this.raycaster.near = 0.05;
-      this.raycaster.far = rayDistance;
+      this.raycaster.far = this.targetDistance;
 
       const hits = this.raycaster.intersectObjects(
         meshes,
@@ -135,6 +124,8 @@ export class CameraController {
       }
     }
 
+    // Move inward immediately when obstructed.
+    // Move outward smoothly when the obstruction disappears.
     if (safeDistance < this.distance) {
       this.distance = safeDistance;
     } else {
@@ -148,13 +139,15 @@ export class CameraController {
       this.targetDistance
     );
 
+    // Place camera on the orbit.
     this.camera.position
       .copy(this.target)
-      .addScaledVector(horizontalBack, this.distance);
+      .addScaledVector(
+        this.orbitDirection,
+        this.distance
+      );
 
-    this.camera.position.y += 0.45;
-
-    // Shoulder camera when aiming.
+    // Shoulder offset while aiming.
     this.right.set(
       Math.cos(this.yaw),
       0,
@@ -166,28 +159,16 @@ export class CameraController {
       this.shoulderOffset.x
     );
 
-    // Prevent camera from entering the ground.
-    const minimumCameraY = player.position.y + 0.20;
+    // Never allow camera to go below the ground.
+    const minimumCameraY = player.position.y + 0.25;
 
     if (this.camera.position.y < minimumCameraY) {
       this.camera.position.y = minimumCameraY;
     }
 
-    // Independent viewing direction.
-    // Mouse up = look at sky.
-    // Mouse down = look towards ground.
-    const cosPitch = Math.cos(this.pitch);
+    // Always keep the character as the camera's focus.
+    this.lookTarget.copy(this.target);
 
-    this.viewDirection.set(
-      -Math.sin(this.yaw) * cosPitch,
-      Math.sin(this.pitch),
-      -Math.cos(this.yaw) * cosPitch
-    ).normalize();
-
-    const lookTarget = new THREE.Vector3()
-      .copy(this.camera.position)
-      .addScaledVector(this.viewDirection, 20);
-
-    this.camera.lookAt(lookTarget);
+    this.camera.lookAt(this.lookTarget);
   }
 }
