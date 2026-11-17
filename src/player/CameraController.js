@@ -28,7 +28,7 @@ export class CameraController {
 
     // Mouse down looks down; mouse up looks up.
     this.minPitch = -1.05;
-    this.maxPitch = 1.05;
+    this.maxPitch = 1.48;
 
     this.collisionPadding = 0.35;
     this.minimumDistance = 0.8;
