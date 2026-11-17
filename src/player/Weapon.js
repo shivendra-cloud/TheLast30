@@ -4,215 +4,240 @@ export class Weapon {
   constructor(scene, camera) {
     this.scene = scene;
     this.camera = camera;
-
     this.cooldown = 0;
-    this.fireRate = 0.25;
+    this.fireRate = 0.22;
     this.recoil = 0;
     this.time = 0;
+    this.flashLife = 0;
 
     this.group = new THREE.Group();
+    this.group.name = 'FPS_AK47_VIEWMODEL';
 
-    // Viewmodel materials: these remain visible regardless of world lighting.
-    const metal = new THREE.MeshBasicMaterial({ color: 0x252729 });
-    const darkMetal = new THREE.MeshBasicMaterial({ color: 0x111314 });
-    const wood = new THREE.MeshBasicMaterial({ color: 0x704322 });
-    const woodLight = new THREE.MeshBasicMaterial({ color: 0x986039 });
-    const rubber = new THREE.MeshBasicMaterial({ color: 0x292725 });
-    const sleeve = new THREE.MeshBasicMaterial({ color: 0x343b2d });
-    const glove = new THREE.MeshBasicMaterial({ color: 0x292a27 });
+    // Basic materials ensure the weapon remains visible in every lighting condition.
+    const mat = (color) => new THREE.MeshBasicMaterial({
+      color,
+      depthTest: false,
+      depthWrite: false
+    });
 
-    const addBox = (name, size, position, material, rotation = null) => {
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(size[0], size[1], size[2]),
-        material
-      );
+    const metal = mat(0x303337);
+    const darkMetal = mat(0x151719);
+    const steel = mat(0x55595b);
+    const wood = mat(0x754522);
+    const woodLight = mat(0x9b6335);
+    const black = mat(0x101112);
+    const sleeve = mat(0x394333);
+    const sleeveDark = mat(0x252c22);
+    const glove = mat(0x292a27);
+
+    const register = (mesh, name) => {
       mesh.name = name;
-      mesh.position.set(...position);
-      if (rotation) mesh.rotation.set(...rotation);
+      mesh.renderOrder = 999;
+      mesh.frustumCulled = false;
       this.group.add(mesh);
       return mesh;
     };
 
-    const addCylinder = (
-      name, radiusTop, radiusBottom, length, position, material, rotation
+    const box = (name, size, pos, material, rot = [0, 0, 0]) => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(...size),
+        material
+      );
+      mesh.position.set(...pos);
+      mesh.rotation.set(...rot);
+      return register(mesh, name);
+    };
+
+    const cylinder = (
+      name, rTop, rBottom, length, pos, material,
+      rot = [Math.PI / 2, 0, 0]
     ) => {
       const mesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(radiusTop, radiusBottom, length, 10),
+        new THREE.CylinderGeometry(rTop, rBottom, length, 12),
         material
       );
-      mesh.name = name;
-      mesh.position.set(...position);
-      mesh.rotation.set(...rotation);
-      this.group.add(mesh);
-      return mesh;
+      mesh.position.set(...pos);
+      mesh.rotation.set(...rot);
+      return register(mesh, name);
     };
 
-    const addLimb = (name, start, end, radius, material) => {
+    const limb = (name, start, end, radius, material) => {
       const a = new THREE.Vector3(...start);
       const b = new THREE.Vector3(...end);
       const direction = new THREE.Vector3().subVectors(b, a);
+
       const mesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(radius * 0.85, radius, direction.length(), 10),
+        new THREE.CylinderGeometry(
+          radius * 0.88,
+          radius,
+          direction.length(),
+          12
+        ),
         material
       );
-      mesh.name = name;
+
       mesh.position.copy(a).add(b).multiplyScalar(0.5);
       mesh.quaternion.setFromUnitVectors(
         new THREE.Vector3(0, 1, 0),
-        direction.normalize()
+        direction.clone().normalize()
       );
-      this.group.add(mesh);
+      register(mesh, name);
 
       const joint = new THREE.Mesh(
-        new THREE.SphereGeometry(radius, 10, 8),
+        new THREE.SphereGeometry(radius, 12, 10),
         material
       );
       joint.position.copy(b);
-      this.group.add(joint);
-      return mesh;
+      register(joint, name + '-joint');
     };
 
-    // --------------------------------------------------
-    // AK-STYLE RIFLE BODY
-    // The rifle points forward along the camera's -Z axis.
-    // --------------------------------------------------
+    const sphere = (name, pos, scale, material) => {
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 14, 12),
+        material
+      );
+      mesh.position.set(...pos);
+      mesh.scale.set(...scale);
+      return register(mesh, name);
+    };
 
-    // Wooden rear stock.
-    addBox('wooden-stock', [0.15, 0.17, 0.55], [0, 0.015, 0.38], wood);
-    addBox('stock-highlight', [0.155, 0.035, 0.43], [0, 0.065, 0.38], woodLight);
-    addBox('stock-buttplate', [0.16, 0.19, 0.055], [0, 0.015, 0.66], rubber);
+    // =====================================================
+    // AK-STYLE RIFLE
+    // Rifle points forward along local negative Z.
+    // =====================================================
 
-    // Main receiver and top cover.
-    addBox('rifle-receiver', [0.19, 0.19, 0.48], [0, 0.015, -0.12], metal);
-    addBox('receiver-side-panel', [0.198, 0.11, 0.29], [0, 0.005, -0.13], darkMetal);
-    addBox('dust-cover', [0.19, 0.055, 0.43], [0, 0.125, -0.13], metal);
+    // Wooden stock at the rear.
+    box('AK wooden stock', [0.17, 0.18, 0.48], [0, 0.02, 0.38], wood);
+    box('Stock upper detail', [0.175, 0.035, 0.38], [0, 0.105, 0.35], woodLight);
+    box('Stock butt plate', [0.18, 0.20, 0.045], [0, 0.02, 0.63], black);
 
-    // Receiver details.
-    addBox('charging-handle', [0.045, 0.035, 0.12], [0.115, 0.075, -0.12], darkMetal);
-    addBox('selector-switch', [0.025, 0.12, 0.15], [0.105, -0.025, 0.02], metal, [0.2, 0, 0]);
-    addBox('receiver-rivet-1', [0.012, 0.025, 0.025], [0.103, 0.025, -0.28], woodLight);
-    addBox('receiver-rivet-2', [0.012, 0.025, 0.025], [0.103, 0.025, -0.02], woodLight);
+    // Receiver.
+    box('AK receiver', [0.21, 0.20, 0.48], [0, 0.025, -0.12], metal);
+    box('Receiver side panel', [0.215, 0.12, 0.29], [0, 0.015, -0.12], darkMetal);
+    box('Receiver top cover', [0.205, 0.055, 0.43], [0, 0.145, -0.12], steel);
+    box('Charging handle', [0.055, 0.04, 0.11], [0.125, 0.075, -0.12], black);
+    box('Selector lever', [0.025, 0.12, 0.14], [0.115, -0.025, 0.02], steel, [0.2, 0, 0]);
 
-    // Barrel and gas tube.
-    addCylinder('main-barrel', 0.027, 0.027, 0.78, [0, 0.045, -0.69], darkMetal, [Math.PI / 2, 0, 0]);
-    addCylinder('gas-tube', 0.035, 0.035, 0.48, [0, 0.145, -0.48], metal, [Math.PI / 2, 0, 0]);
-    addCylinder('front-barrel-band', 0.045, 0.045, 0.055, [0, 0.045, -1.02], metal, [Math.PI / 2, 0, 0]);
+    // Barrel.
+    cylinder('AK barrel', 0.027, 0.027, 0.82, [0, 0.045, -0.70]);
+    cylinder('Barrel collar', 0.045, 0.045, 0.065, [0, 0.045, -1.06]);
+    cylinder('Muzzle brake', 0.043, 0.032, 0.13, [0, 0.045, -1.15]);
 
-    // Muzzle and front sight.
-    addCylinder('muzzle-brake', 0.043, 0.034, 0.12, [0, 0.045, -1.12], metal, [Math.PI / 2, 0, 0]);
-    addBox('front-sight-base', [0.09, 0.10, 0.07], [0, 0.12, -0.94], darkMetal);
-    addBox('front-sight-post', [0.018, 0.09, 0.018], [0, 0.205, -0.94], metal);
+    // Gas tube and wooden handguard.
+    cylinder('Gas tube', 0.035, 0.035, 0.48, [0, 0.15, -0.48]);
+    box('Wooden handguard', [0.18, 0.14, 0.43], [0, 0.035, -0.57], wood);
+    box('Handguard top', [0.185, 0.025, 0.35], [0, 0.115, -0.57], woodLight);
 
-    // Wooden handguard.
-    addBox('wooden-handguard', [0.17, 0.13, 0.42], [0, 0.035, -0.57], wood);
-    addBox('handguard-highlight', [0.175, 0.025, 0.34], [0, 0.105, -0.57], woodLight);
-
-    // Rear iron sight.
-    addBox('rear-sight-base', [0.09, 0.035, 0.09], [0, 0.17, -0.01], darkMetal);
-    addBox('rear-sight', [0.07, 0.065, 0.035], [0, 0.205, -0.01], metal);
+    // Iron sights.
+    box('Front sight base', [0.09, 0.09, 0.065], [0, 0.13, -0.96], darkMetal);
+    box('Front sight post', [0.018, 0.10, 0.02], [0, 0.215, -0.96], steel);
+    box('Rear sight base', [0.09, 0.04, 0.08], [0, 0.18, -0.015], black);
+    box('Rear sight', [0.07, 0.055, 0.025], [0, 0.22, -0.015], steel);
 
     // Pistol grip.
-    addBox('pistol-grip', [0.12, 0.26, 0.14], [0, -0.19, 0.025], rubber, [0.16, 0, 0]);
-    addBox('grip-panel', [0.125, 0.12, 0.025], [0, -0.22, 0.10], darkMetal);
+    box('AK pistol grip', [0.13, 0.25, 0.15], [0, -0.19, 0.035], black, [0.16, 0, 0]);
+    box('Grip panel', [0.135, 0.14, 0.025], [0, -0.22, 0.115], darkMetal);
 
-    // Curved-looking magazine made from angled sections.
-    addBox('magazine-upper', [0.14, 0.16, 0.16], [0, -0.16, -0.19], darkMetal, [-0.08, 0, 0]);
-    addBox('magazine-middle', [0.135, 0.18, 0.15], [0, -0.31, -0.17], metal, [-0.18, 0, 0]);
-    addBox('magazine-lower', [0.12, 0.13, 0.13], [0, -0.45, -0.13], darkMetal, [-0.28, 0, 0]);
-    addBox('magazine-base', [0.14, 0.035, 0.13], [0, -0.515, -0.11], metal, [-0.28, 0, 0]);
+    // Magazine with angled lower section.
+    box('Magazine upper', [0.15, 0.16, 0.17], [0, -0.15, -0.20], black);
+    box('Magazine middle', [0.145, 0.19, 0.15], [0, -0.31, -0.18], metal, [-0.15, 0, 0]);
+    box('Magazine lower', [0.13, 0.15, 0.13], [0, -0.46, -0.14], darkMetal, [-0.27, 0, 0]);
+    box('Magazine base plate', [0.15, 0.035, 0.13], [0, -0.535, -0.11], steel, [-0.27, 0, 0]);
 
-    // Trigger guard.
-    const triggerGuard = new THREE.Mesh(
-      new THREE.TorusGeometry(0.075, 0.012, 6, 12, Math.PI),
-      metal
+    // Trigger and guard.
+    box('Trigger', [0.025, 0.09, 0.025], [0, -0.12, 0.015], steel);
+    const guard = new THREE.Mesh(
+      new THREE.TorusGeometry(0.065, 0.012, 8, 16),
+      steel
     );
-    triggerGuard.position.set(0, -0.11, 0.015);
-    triggerGuard.rotation.set(Math.PI / 2, 0, Math.PI);
-    this.group.add(triggerGuard);
+    guard.position.set(0, -0.12, 0.035);
+    guard.rotation.x = Math.PI / 2;
+    register(guard, 'Trigger guard');
 
-    // --------------------------------------------------
-    // PLAYER ARMS, SLEEVES AND GLOVED HANDS
-    // --------------------------------------------------
+    // =====================================================
+    // PLAYER ARMS AND HANDS
+    // =====================================================
 
-    // Right arm: holding the pistol grip.
-    addLimb(
-      'right-sleeve',
-      [0.48, -0.68, 0.62],
-      [0.13, -0.30, 0.13],
-      0.105,
+    // Right arm reaches the pistol grip.
+    limb(
+      'Right military sleeve',
+      [0.61, -0.68, 0.62],
+      [0.17, -0.29, 0.12],
+      0.115,
       sleeve
     );
 
-    const rightHand = new THREE.Mesh(
-      new THREE.SphereGeometry(0.105, 12, 10),
+    // Right wrist and glove.
+    cylinder(
+      'Right glove cuff', 0.105, 0.115, 0.12,
+      [0.16, -0.29, 0.12], sleeveDark,
+      [0.2, 0, -0.7]
+    );
+    sphere(
+      'Right hand',
+      [0.045, -0.205, 0.035],
+      [0.115, 0.085, 0.14],
       glove
     );
-    rightHand.name = 'right-gloved-hand';
-    rightHand.scale.set(1.0, 0.75, 1.2);
-    rightHand.position.set(0.045, -0.19, 0.045);
-    this.group.add(rightHand);
 
-    // Left arm: supporting the rifle handguard.
-    addLimb(
-      'left-sleeve',
-      [-0.52, -0.70, 0.55],
-      [-0.13, -0.20, -0.48],
-      0.105,
+    // Left arm supports the fore-end.
+    limb(
+      'Left military sleeve',
+      [-0.61, -0.70, 0.62],
+      [-0.14, -0.22, -0.48],
+      0.115,
       sleeve
     );
 
-    const leftHand = new THREE.Mesh(
-      new THREE.SphereGeometry(0.095, 12, 10),
+    cylinder(
+      'Left glove cuff', 0.105, 0.115, 0.12,
+      [-0.16, -0.26, -0.42], sleeveDark,
+      [0.2, 0, 0.7]
+    );
+    sphere(
+      'Left hand',
+      [-0.12, -0.155, -0.48],
+      [0.13, 0.085, 0.15],
       glove
     );
-    leftHand.name = 'left-gloved-hand';
-    leftHand.scale.set(1.25, 0.75, 1.0);
-    leftHand.position.set(-0.12, -0.13, -0.48);
-    this.group.add(leftHand);
 
-    // Visible fingers around the foregrip.
-    for (let i = 0; i < 3; i++) {
-      addBox(
-        `left-finger-${i}`,
+    // Fingers wrapped around the handguard.
+    for (let i = 0; i < 4; i++) {
+      box(
+        'Left glove finger ' + i,
         [0.035, 0.035, 0.14],
-        [-0.08 + i * 0.035, -0.19 - i * 0.012, -0.53],
+        [-0.17 + i * 0.035, -0.205, -0.55 + i * 0.012],
         glove,
-        [0.15, 0, 0]
+        [0.12, 0, 0]
       );
     }
 
-    // Small sleeve cuffs.
-    addCylinder(
-      'right-cuff', 0.11, 0.11, 0.09,
-      [0.43, -0.625, 0.55], rubber, [0, 0, -0.7]
-    );
-    addCylinder(
-      'left-cuff', 0.11, 0.11, 0.09,
-      [-0.47, -0.635, 0.46], rubber, [0, 0, 0.7]
-    );
+    // =====================================================
+    // CAMERA-ATTACHED VIEWMODEL
+    // =====================================================
 
-    // --------------------------------------------------
-    // VIEWMODEL POSITION AND ANIMATION
-    // --------------------------------------------------
-
-    this.hipPosition = new THREE.Vector3(0.28, -0.27, -0.62);
-    this.aimPosition = new THREE.Vector3(0.04, -0.23, -0.58);
+    this.hipPosition = new THREE.Vector3(0.39, -0.39, -0.92);
+    this.aimPosition = new THREE.Vector3(0.10, -0.25, -0.85);
     this.weaponPosition = this.hipPosition.clone();
 
     this.group.position.copy(this.weaponPosition);
+    this.group.scale.setScalar(1.0);
+
+    // Add directly to the active camera.
     this.camera.add(this.group);
 
-    // Muzzle flash is placed in world space when firing.
+    // Muzzle flash.
     this.flash = new THREE.Mesh(
-      new THREE.SphereGeometry(0.075, 8, 6),
+      new THREE.SphereGeometry(0.085, 10, 8),
       new THREE.MeshBasicMaterial({
         color: 0xffd36a,
-        transparent: true
+        depthTest: false,
+        depthWrite: false
       })
     );
     this.flash.visible = false;
+    this.flash.renderOrder = 1000;
     this.scene.add(this.flash);
-    this.flashLife = 0;
 
     // Bullet tracers.
     this.tracers = [];
@@ -224,14 +249,17 @@ export class Weapon {
       ]);
 
       const material = new THREE.LineBasicMaterial({
-        color: 0xffe5a0,
+        color: 0xffe4a0,
         transparent: true,
-        opacity: 0
+        opacity: 0,
+        depthTest: false
       });
 
       const line = new THREE.Line(geometry, material);
+      line.renderOrder = 1001;
       line.visible = false;
       this.scene.add(line);
+
       this.tracers.push({ line, life: 0 });
     }
   }
@@ -245,11 +273,10 @@ export class Weapon {
 
     const target = isAiming ? this.aimPosition : this.hipPosition;
 
-    this.weaponPosition.lerp(target, Math.min(1, dt * 10));
+    this.weaponPosition.lerp(target, Math.min(1, dt * 12));
 
-    this.recoil = Math.max(0, this.recoil - dt * 2.2);
+    this.recoil = Math.max(0, this.recoil - dt * 2.0);
 
-    // Gentle idle movement and walking-like sway.
     const sway = isAiming ? 0.0015 : 0.004;
     const bobX = Math.sin(this.time * 5) * sway;
     const bobY = Math.abs(Math.cos(this.time * 5)) * sway;
@@ -289,19 +316,20 @@ export class Weapon {
     this.cooldown = this.fireRate;
     this.recoil = 0.075;
 
-    const origin = new THREE.Vector3();
     this.group.updateMatrixWorld(true);
-    this.group.localToWorld(new THREE.Vector3(0, 0.045, -1.18));
-    this.group.localToWorld(origin.set(0, 0.045, -1.18));
+
+    const origin = new THREE.Vector3(0, 0.045, -1.22);
+    this.group.localToWorld(origin);
 
     this.flash.position.copy(origin);
     this.flash.scale.setScalar(0.8 + Math.random() * 0.7);
     this.flash.visible = true;
-    this.flashLife = 0.045;
+    this.flashLife = 0.05;
 
-    const tracer = this.tracers.find(item => item.life <= 0) || this.tracers[0];
+    const tracer =
+      this.tracers.find(item => item.life <= 0) || this.tracers[0];
+
     const positions = tracer.line.geometry.attributes.position;
-
     positions.setXYZ(0, origin.x, origin.y, origin.z);
     positions.setXYZ(1, targetPoint.x, targetPoint.y, targetPoint.z);
     positions.needsUpdate = true;
