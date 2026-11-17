@@ -6,7 +6,7 @@ export class CameraController {
     this.input = input;
 
     this.yaw = 0;
-    this.pitch = 0.28;
+    this.pitch = 0;
 
     this.distance = 6.5;
     this.targetDistance = 6.5;
@@ -14,20 +14,22 @@ export class CameraController {
     this.sensitivity = 0.0025;
 
     this.target = new THREE.Vector3();
+    this.cameraPosition = new THREE.Vector3();
+    this.direction = new THREE.Vector3();
+    this.viewDirection = new THREE.Vector3();
+    this.right = new THREE.Vector3();
+
     this.shoulderOffset = new THREE.Vector3();
     this.targetShoulderOffset = new THREE.Vector3();
 
     this.raycaster = new THREE.Raycaster();
-    this.direction = new THREE.Vector3();
-    this.right = new THREE.Vector3();
 
     this.initialized = false;
 
-    // Allow almost complete vertical camera movement.
-    this.minPitch = -Math.PI / 2 + 0.02;
-    this.maxPitch = Math.PI / 2 - 0.02;
+    // Look freely up and down without flipping.
+    this.minPitch = -1.15;
+    this.maxPitch = 1.48;
 
-    // Camera collision protection.
     this.collisionPadding = 0.35;
     this.minimumDistance = 0.65;
   }
@@ -48,59 +50,77 @@ export class CameraController {
       Math.min(1, dt * 12)
     );
 
-    const sensitivity = this.sensitivity * (isAiming ? 0.5 : 1);
+    const sensitivity =
+      this.sensitivity * (isAiming ? 0.5 : 1);
 
     const { dx, dy } = this.input.consumeMouseDelta();
 
     this.yaw -= dx * sensitivity;
     this.pitch -= dy * sensitivity;
 
-    // Free vertical movement without camera flipping.
     this.pitch = THREE.MathUtils.clamp(
       this.pitch,
       this.minPitch,
       this.maxPitch
     );
 
-    // Focus on player's upper body.
-    const focus = new THREE.Vector3(
+    // Character upper-body focus.
+    this.target.set(
       player.position.x,
-      player.position.y + 0.72,
+      player.position.y + 0.85,
       player.position.z
     );
 
     if (!this.initialized) {
-      this.target.copy(focus);
-      this.distance = this.targetDistance;
       this.initialized = true;
-    } else {
-      this.target.lerp(
-        focus,
-        Math.min(1, dt * 15)
-      );
+      this.distance = this.targetDistance;
     }
 
-    const cosPitch = Math.cos(this.pitch);
+    // Camera remains BEHIND the character.
+    // Vertical mouse movement changes the viewing direction,
+    // NOT the camera's orbit around the character.
+    const horizontalBack = new THREE.Vector3(
+      Math.sin(this.yaw),
+      0,
+      Math.cos(this.yaw)
+    );
 
-    this.direction.set(
-      Math.sin(this.yaw) * cosPitch,
-      Math.sin(this.pitch),
-      Math.cos(this.yaw) * cosPitch
-    ).normalize();
+    this.cameraPosition.copy(this.target);
 
-    const desiredDistance = this.targetDistance;
+    this.cameraPosition.addScaledVector(
+      horizontalBack,
+      this.targetDistance
+    );
 
-    // Detect camera obstruction using map collision meshes.
+    // Keep camera at normal third-person height.
+    this.cameraPosition.y += 0.45;
+
+    // Camera collision detection.
     const meshes = colliders
       .map(c => c.mesh)
-      .filter(mesh => mesh && mesh.isObject3D && mesh.visible);
+      .filter(
+        mesh => mesh && mesh.isObject3D && mesh.visible
+      );
 
-    let safeDistance = desiredDistance;
+    const cameraOffset = new THREE.Vector3()
+      .subVectors(this.cameraPosition, this.target);
 
-    if (meshes.length > 0) {
-      this.raycaster.set(this.target, this.direction);
+    const rayDistance = cameraOffset.length();
+
+    let safeDistance = this.targetDistance;
+
+    if (meshes.length > 0 && rayDistance > 0) {
+      this.direction
+        .copy(cameraOffset)
+        .normalize();
+
+      this.raycaster.set(
+        this.target,
+        this.direction
+      );
+
       this.raycaster.near = 0.05;
-      this.raycaster.far = desiredDistance;
+      this.raycaster.far = rayDistance;
 
       const hits = this.raycaster.intersectObjects(
         meshes,
@@ -115,26 +135,26 @@ export class CameraController {
       }
     }
 
-    // Pull in immediately when blocked.
-    // Smoothly return when the obstruction disappears.
     if (safeDistance < this.distance) {
       this.distance = safeDistance;
     } else {
       this.distance +=
         (safeDistance - this.distance) *
-        Math.min(1, dt * 5);
+        Math.min(1, dt * 8);
     }
 
     this.distance = Math.min(
       this.distance,
-      desiredDistance
+      this.targetDistance
     );
 
     this.camera.position
       .copy(this.target)
-      .addScaledVector(this.direction, this.distance);
+      .addScaledVector(horizontalBack, this.distance);
 
-    // Shoulder offset while aiming.
+    this.camera.position.y += 0.45;
+
+    // Shoulder camera when aiming.
     this.right.set(
       Math.cos(this.yaw),
       0,
@@ -146,13 +166,28 @@ export class CameraController {
       this.shoulderOffset.x
     );
 
-    // Prevent camera from going underneath player ground level.
+    // Prevent camera from entering the ground.
     const minimumCameraY = player.position.y + 0.20;
 
     if (this.camera.position.y < minimumCameraY) {
       this.camera.position.y = minimumCameraY;
     }
 
-    this.camera.lookAt(this.target);
+    // Independent viewing direction.
+    // Mouse up = look at sky.
+    // Mouse down = look towards ground.
+    const cosPitch = Math.cos(this.pitch);
+
+    this.viewDirection.set(
+      -Math.sin(this.yaw) * cosPitch,
+      Math.sin(this.pitch),
+      -Math.cos(this.yaw) * cosPitch
+    ).normalize();
+
+    const lookTarget = new THREE.Vector3()
+      .copy(this.camera.position)
+      .addScaledVector(this.viewDirection, 20);
+
+    this.camera.lookAt(lookTarget);
   }
 }
