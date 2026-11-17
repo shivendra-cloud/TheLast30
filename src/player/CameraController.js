@@ -8,7 +8,6 @@ export class CameraController {
     this.yaw = 0;
     this.pitch = 0.28;
 
-    // Normal third-person and aiming distances
     this.distance = 6.5;
     this.targetDistance = 6.5;
 
@@ -24,11 +23,11 @@ export class CameraController {
 
     this.initialized = false;
 
-    // Camera must never look underneath the ground.
-    this.minPitch = 0.10;
-    this.maxPitch = 0.90;
+    // Allow almost complete vertical camera movement.
+    this.minPitch = -Math.PI / 2 + 0.02;
+    this.maxPitch = Math.PI / 2 - 0.02;
 
-    // Keep a small gap between the camera and obstacles.
+    // Camera collision protection.
     this.collisionPadding = 0.35;
     this.minimumDistance = 0.65;
   }
@@ -50,19 +49,20 @@ export class CameraController {
     );
 
     const sensitivity = this.sensitivity * (isAiming ? 0.5 : 1);
+
     const { dx, dy } = this.input.consumeMouseDelta();
 
     this.yaw -= dx * sensitivity;
     this.pitch -= dy * sensitivity;
 
-    // Hard vertical camera lock.
+    // Free vertical movement without camera flipping.
     this.pitch = THREE.MathUtils.clamp(
       this.pitch,
       this.minPitch,
       this.maxPitch
     );
 
-    // Focus around the character's head and upper body.
+    // Focus on player's upper body.
     const focus = new THREE.Vector3(
       player.position.x,
       player.position.y + 0.72,
@@ -74,7 +74,10 @@ export class CameraController {
       this.distance = this.targetDistance;
       this.initialized = true;
     } else {
-      this.target.lerp(focus, Math.min(1, dt * 15));
+      this.target.lerp(
+        focus,
+        Math.min(1, dt * 15)
+      );
     }
 
     const cosPitch = Math.cos(this.pitch);
@@ -85,10 +88,9 @@ export class CameraController {
       Math.cos(this.yaw) * cosPitch
     ).normalize();
 
-    // Desired camera position is behind and above the player.
     const desiredDistance = this.targetDistance;
 
-    // Only use actual map collision meshes.
+    // Detect camera obstruction using map collision meshes.
     const meshes = colliders
       .map(c => c.mesh)
       .filter(mesh => mesh && mesh.isObject3D && mesh.visible);
@@ -100,7 +102,10 @@ export class CameraController {
       this.raycaster.near = 0.05;
       this.raycaster.far = desiredDistance;
 
-      const hits = this.raycaster.intersectObjects(meshes, false);
+      const hits = this.raycaster.intersectObjects(
+        meshes,
+        false
+      );
 
       if (hits.length > 0) {
         safeDistance = Math.max(
@@ -110,21 +115,26 @@ export class CameraController {
       }
     }
 
-    // Pull in immediately when blocked; ease back out when clear.
+    // Pull in immediately when blocked.
+    // Smoothly return when the obstruction disappears.
     if (safeDistance < this.distance) {
       this.distance = safeDistance;
     } else {
       this.distance +=
-        (safeDistance - this.distance) * Math.min(1, dt * 5);
+        (safeDistance - this.distance) *
+        Math.min(1, dt * 5);
     }
 
-    this.distance = Math.min(this.distance, desiredDistance);
+    this.distance = Math.min(
+      this.distance,
+      desiredDistance
+    );
 
     this.camera.position
       .copy(this.target)
       .addScaledVector(this.direction, this.distance);
 
-    // Shoulder offset for aiming.
+    // Shoulder offset while aiming.
     this.right.set(
       Math.cos(this.yaw),
       0,
@@ -136,8 +146,8 @@ export class CameraController {
       this.shoulderOffset.x
     );
 
-    // Final safety: camera stays above the player's ground level.
-    const minimumCameraY = player.position.y + 0.35;
+    // Prevent camera from going underneath player ground level.
+    const minimumCameraY = player.position.y + 0.20;
 
     if (this.camera.position.y < minimumCameraY) {
       this.camera.position.y = minimumCameraY;
