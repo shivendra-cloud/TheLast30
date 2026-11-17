@@ -9,155 +9,116 @@ export default class CoastalCityMap {
 
   build() {
     // 1. Base Ground
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // 2. Asphalt Road
-    const roadMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(20, 300), roadMat);
-    road.rotation.x = -Math.PI / 2;
-    road.position.set(0, 0.02, 0);
-    road.receiveShadow = true;
-    this.scene.add(road);
-
-    // 3. Raised Sidewalks (Curb height)
-    const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
-    for (const x of [-13, 13]) {
-      const sidewalk = new THREE.Mesh(new THREE.BoxGeometry(6, 0.3, 300), sidewalkMat);
-      sidewalk.position.set(x, 0.15, 0);
-      sidewalk.receiveShadow = true;
-      sidewalk.castShadow = true;
-      this.scene.add(sidewalk);
-    }
-
-    // 4. Massive 3D Skyscrapers (Layered for depth)
-    const buildingColors = [0x4a4d52, 0x6b7075, 0x3a3d42, 0x5c5f64];
+    // 2. Cross-Street Asphalt (Creates a 4-way intersection)
+    const roadMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
     
-    for (let z = -120; z <= 120; z += 45) {
-      for (const side of [-1, 1]) {
-        const xBase = side * 20;
-        
-        // Main Tower
-        const h = 80 + Math.random() * 40;
-        const w = 25;
-        const d = 25;
-        const mat = new THREE.MeshLambertMaterial({ color: buildingColors[Math.floor(Math.random()*buildingColors.length)] });
-        
-        const tower = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-        tower.position.set(xBase + side * (w/2), h / 2, z);
-        tower.castShadow = true;
-        tower.receiveShadow = true;
-        this.scene.add(tower);
-        
-        this.addCollider(tower.position.x, h/2, z, w, h, d, tower);
+    // Main vertical road
+    const roadMain = new THREE.Mesh(new THREE.PlaneGeometry(24, 400), roadMat);
+    roadMain.rotation.x = -Math.PI / 2;
+    roadMain.position.set(0, 0.02, 0);
+    roadMain.receiveShadow = true;
+    this.scene.add(roadMain);
 
-        // Lower Tier (Setback for depth)
-        const lowH = 20;
-        const lowW = 30;
-        const lowD = 30;
-        const lowTier = new THREE.Mesh(new THREE.BoxGeometry(lowW, lowH, lowD), mat);
-        lowTier.position.set(xBase + side * (lowW/2), lowH / 2, z);
-        lowTier.castShadow = true;
-        lowTier.receiveShadow = true;
-        this.scene.add(lowTier);
-        
-        this.addCollider(lowTier.position.x, lowH/2, z, lowW, lowH, lowD, lowTier);
+    // Cross horizontal road
+    const roadCross = new THREE.Mesh(new THREE.PlaneGeometry(400, 24), roadMat);
+    roadCross.rotation.x = -Math.PI / 2;
+    roadCross.position.set(0, 0.03, 0);
+    roadCross.receiveShadow = true;
+    this.scene.add(roadCross);
 
-        // 3D Windows (Recessed)
-        const winMat = new THREE.MeshBasicMaterial({ color: 0x222a33 });
-        for(let r = 0; r < Math.floor(h/4); r++) {
-          for(let c = -3; c <= 3; c++) {
-            if (Math.random() > 0.1) {
-              const win = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2, 2.5), winMat);
-              win.position.set(xBase + side*0.1, 4 + r*4, z + c*3.5);
-              this.scene.add(win);
-            }
+    // 3. Massive 3D City Blocks (Leaves corners visible)
+    const buildingColors = [0x6a7078, 0x4a4f55, 0x5d646b, 0x3e4248];
+    
+    // Spawns buildings in 4 quadrants around the intersection
+    const quadrants = [
+      { x: 30, z: 30 }, { x: -30, z: 30 },
+      { x: 30, z: -30 }, { x: -30, z: -30 }
+    ];
+
+    quadrants.forEach(q => {
+      const h = 60 + Math.random() * 50; // Tall
+      const w = 40;
+      const d = 40;
+      
+      const mat = new THREE.MeshLambertMaterial({ color: buildingColors[Math.floor(Math.random()*buildingColors.length)] });
+      const block = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      
+      // Push them out from the center to leave the roads clear
+      const xPos = q.x + Math.sign(q.x) * (w/2 + 5);
+      const zPos = q.z + Math.sign(q.z) * (d/2 + 5);
+      
+      block.position.set(xPos, h / 2, zPos);
+      block.castShadow = true;
+      block.receiveShadow = true;
+      this.scene.add(block);
+      
+      this.addCollider(xPos, h/2, zPos, w, h, d, block);
+
+      // Add 3D Windows to the faces pointing at the intersection
+      const winMat = new THREE.MeshBasicMaterial({ color: 0x111822 });
+      
+      // Face pointing inwards
+      for(let r = 0; r < Math.floor(h/4); r++) {
+        for(let c = -4; c <= 4; c++) {
+          if (Math.random() > 0.2) {
+            const win = new THREE.Mesh(new THREE.BoxGeometry(2, 2.5, 0.2), winMat);
+            win.position.set(xPos - Math.sign(q.x)*(w/2 + 0.1), 4 + r*4, zPos + c*3.5);
+            this.scene.add(win);
           }
         }
       }
+    });
+
+    // 4. 3D Street Props (Scaffolding & Alleyways)
+    const metalMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
+    for (let i = 0; i < 20; i++) {
+      const scaffold = new THREE.Mesh(new THREE.BoxGeometry(0.5, 15, 0.5), metalMat);
+      scaffold.position.set(15 + Math.random()*5, 7.5, 15 + Math.random()*5);
+      scaffold.castShadow = true;
+      this.scene.add(scaffold);
+      this.addCollider(scaffold.position.x, 7.5, scaffold.position.z, 0.5, 15, 0.5, scaffold);
     }
 
-    // 5. NYC Fire Escapes (3D Depth on buildings)
-    const metalMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-    for (let z = -100; z <= 100; z += 45) {
-      for (const side of [-1, 1]) {
-        for (let y = 10; y < 40; y += 10) {
-          const platform = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 6), metalMat);
-          platform.position.set(side * 10, y, z);
-          platform.castShadow = true;
-          this.scene.add(platform);
-          
-          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1, 6), metalMat);
-          rail.position.set(side * 11, y + 0.5, z);
-          this.scene.add(rail);
-        }
-      }
-    }
-
-    // 6. 3D Traffic & Taxis
-    for (let i = 0; i < 10; i++) {
-      const taxi = new THREE.Group();
-      const yellowMat = new THREE.MeshLambertMaterial({ color: 0xffbb00 });
-      const darkMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    // 5. Abandoned Cars at the Intersection
+    for (let i = 0; i < 6; i++) {
+      const car = new THREE.Group();
+      const cMat = new THREE.MeshLambertMaterial({ color: Math.random() > 0.5 ? 0x992222 : 0x222299 });
       
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 4.8), yellowMat);
-      body.position.y = 0.7;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 4.8), cMat);
+      body.position.y = 0.6;
       body.castShadow = true;
-      taxi.add(body);
+      car.add(body);
 
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.7, 2.4), yellowMat);
-      roof.position.set(0, 1.4, 0);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.7, 2.4), cMat);
+      roof.position.set(0, 1.3, 0);
       roof.castShadow = true;
-      taxi.add(roof);
+      car.add(roof);
 
-      // 3D Windows
-      const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 0.1), darkMat);
-      windshield.position.set(0, 1.4, 1.2);
-      taxi.add(windshield);
-      
-      const backWindow = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 0.1), darkMat);
-      backWindow.position.set(0, 1.4, -1.2);
-      taxi.add(backWindow);
-
-      // Wheels
+      const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
       for(const wx of [-1.0, 1.0]) {
         for(const wz of [-1.6, 1.6]) {
-          const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 8), darkMat);
+          const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 8), wheelMat);
           wheel.rotation.z = Math.PI / 2;
           wheel.position.set(wx, 0.4, wz);
-          taxi.add(wheel);
+          car.add(wheel);
         }
       }
 
-      const lane = Math.random() > 0.5 ? -4 : 4;
-      taxi.position.set(lane, 0, -110 + i * 25);
-      taxi.rotation.y = Math.random() > 0.5 ? 0 : Math.PI;
-      this.scene.add(taxi);
+      // Scatter them randomly across the intersection
+      car.position.set((Math.random()-0.5)*20, 0, (Math.random()-0.5)*20);
+      car.rotation.y = Math.random() * Math.PI;
+      this.scene.add(car);
       
-      this.addCollider(lane, 0.7, taxi.position.z, 2.2, 1.8, 4.8, body);
+      this.addCollider(car.position.x, 0.6, car.position.z, 2.2, 1.8, 4.8, body);
     }
 
-    // 7. Streetlights (Overhanging)
-    const poleMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
-    for (let z = -120; z <= 120; z += 40) {
-      for (const x of [-12, 12]) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 10, 8), poleMat);
-        pole.position.set(x, 5, z);
-        pole.castShadow = true;
-        this.scene.add(pole);
-
-        const arm = new THREE.Mesh(new THREE.BoxGeometry(3, 0.2, 0.2), poleMat);
-        arm.position.set(x - Math.sign(x) * 1.5, 9.8, z);
-        this.scene.add(arm);
-
-        this.addCollider(x, 5, z, 0.5, 10, 0.5, pole);
-      }
-    }
-
-    // 8. Solid World Bounds
+    // 6. World Bounds
     this.colliders.push(
       { min: new THREE.Vector3(-150, 0, -150), max: new THREE.Vector3(150, 50, -145) },
       { min: new THREE.Vector3(-150, 0, 145), max: new THREE.Vector3(150, 50, 150) },
