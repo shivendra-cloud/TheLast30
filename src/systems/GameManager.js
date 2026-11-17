@@ -64,7 +64,7 @@ export class GameManager {
       }
       const isAiming = this.input.isAiming();
       this.hud.setFocusMode(isAiming);
-      this.player.update(dt, this.input, this.cameraCtrl.yaw, this.map.colliders);
+      this.player.update(dt, this.input, this.cameraCtrl.yaw, this.map.colliders, this.cameraCtrl.pitch);
       this.npcManager.update(dt, this.player.position, this.map.colliders);
       this.infectionSystem.update(dt);
       this.cameraCtrl.update(dt, this.player, this.map.colliders);

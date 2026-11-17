@@ -4,61 +4,145 @@ export class CameraController {
   constructor(camera, input) {
     this.camera = camera;
     this.input = input;
+
     this.yaw = 0;
-    this.pitch = 0.15;
-    this.distance = 7.0;
-    this.targetDistance = 7.0;
+    this.pitch = 0.28;
+
+    // Normal third-person and aiming distances
+    this.distance = 6.5;
+    this.targetDistance = 6.5;
+
     this.sensitivity = 0.0025;
+
     this.target = new THREE.Vector3();
-    
-    this.shoulderOffset = new THREE.Vector3(0, 0, 0);
-    this.targetShoulderOffset = new THREE.Vector3(0, 0, 0);
-    
+    this.shoulderOffset = new THREE.Vector3();
+    this.targetShoulderOffset = new THREE.Vector3();
+
     this.raycaster = new THREE.Raycaster();
+    this.direction = new THREE.Vector3();
+    this.right = new THREE.Vector3();
+
+    this.initialized = false;
+
+    // Camera must never look underneath the ground.
+    this.minPitch = 0.10;
+    this.maxPitch = 0.90;
+
+    // Keep a small gap between the camera and obstacles.
+    this.collisionPadding = 0.35;
+    this.minimumDistance = 0.65;
   }
 
-  update(dt, player, colliders) {
+  update(dt, player, colliders = []) {
     const isAiming = this.input.isAiming();
-    
-    this.targetDistance = isAiming ? 2.5 : 7.0;
-    this.targetShoulderOffset.set(isAiming ? 0.7 : 0, 0, 0);
-    this.shoulderOffset.lerp(this.targetShoulderOffset, Math.min(1, dt * 20));
 
-    const sens = this.sensitivity * (isAiming ? 0.5 : 1.0);
+    this.targetDistance = isAiming ? 2.5 : 6.5;
+
+    this.targetShoulderOffset.set(
+      isAiming ? 0.65 : 0,
+      0,
+      0
+    );
+
+    this.shoulderOffset.lerp(
+      this.targetShoulderOffset,
+      Math.min(1, dt * 12)
+    );
+
+    const sensitivity = this.sensitivity * (isAiming ? 0.5 : 1);
     const { dx, dy } = this.input.consumeMouseDelta();
-    this.yaw -= dx * sens;
-    this.pitch -= dy * sens;
-    this.pitch = Math.max(-0.6, Math.min(1.1, this.pitch));
 
-    const focus = new THREE.Vector3(player.position.x, player.position.y + 0.6, player.position.z);
-    this.target.lerp(focus, Math.min(1, dt * 25)); // Snappier camera follow
+    this.yaw -= dx * sensitivity;
+    this.pitch -= dy * sensitivity;
+
+    // Hard vertical camera lock.
+    this.pitch = THREE.MathUtils.clamp(
+      this.pitch,
+      this.minPitch,
+      this.maxPitch
+    );
+
+    // Focus around the character's head and upper body.
+    const focus = new THREE.Vector3(
+      player.position.x,
+      player.position.y + 0.72,
+      player.position.z
+    );
+
+    if (!this.initialized) {
+      this.target.copy(focus);
+      this.distance = this.targetDistance;
+      this.initialized = true;
+    } else {
+      this.target.lerp(focus, Math.min(1, dt * 15));
+    }
 
     const cosPitch = Math.cos(this.pitch);
-    const dir = new THREE.Vector3(
+
+    this.direction.set(
       Math.sin(this.yaw) * cosPitch,
       Math.sin(this.pitch),
       Math.cos(this.yaw) * cosPitch
     ).normalize();
 
-    this.raycaster.set(this.target, dir);
-    this.raycaster.far = this.targetDistance;
-    
-    const meshes = colliders.map(c => c.mesh).filter(m => m);
-    const hits = this.raycaster.intersectObjects(meshes, false);
-    
-    let actualDistance = this.targetDistance;
-    if (hits.length > 0) {
-      actualDistance = Math.max(1.0, hits[0].distance - 0.2);
+    // Desired camera position is behind and above the player.
+    const desiredDistance = this.targetDistance;
+
+    // Only use actual map collision meshes.
+    const meshes = colliders
+      .map(c => c.mesh)
+      .filter(mesh => mesh && mesh.isObject3D && mesh.visible);
+
+    let safeDistance = desiredDistance;
+
+    if (meshes.length > 0) {
+      this.raycaster.set(this.target, this.direction);
+      this.raycaster.near = 0.05;
+      this.raycaster.far = desiredDistance;
+
+      const hits = this.raycaster.intersectObjects(meshes, false);
+
+      if (hits.length > 0) {
+        safeDistance = Math.max(
+          this.minimumDistance,
+          hits[0].distance - this.collisionPadding
+        );
+      }
     }
 
-    this.distance += (actualDistance - this.distance) * Math.min(1, dt * 15);
+    // Pull in immediately when blocked; ease back out when clear.
+    if (safeDistance < this.distance) {
+      this.distance = safeDistance;
+    } else {
+      this.distance +=
+        (safeDistance - this.distance) * Math.min(1, dt * 5);
+    }
 
-    this.camera.position.copy(this.target).add(dir.multiplyScalar(this.distance));
-      
-    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-    this.camera.position.add(right.multiplyScalar(this.shoulderOffset.x));
+    this.distance = Math.min(this.distance, desiredDistance);
 
-    this.camera.position.y += isAiming ? 1.4 : 1.2;
+    this.camera.position
+      .copy(this.target)
+      .addScaledVector(this.direction, this.distance);
+
+    // Shoulder offset for aiming.
+    this.right.set(
+      Math.cos(this.yaw),
+      0,
+      -Math.sin(this.yaw)
+    );
+
+    this.camera.position.addScaledVector(
+      this.right,
+      this.shoulderOffset.x
+    );
+
+    // Final safety: camera stays above the player's ground level.
+    const minimumCameraY = player.position.y + 0.35;
+
+    if (this.camera.position.y < minimumCameraY) {
+      this.camera.position.y = minimumCameraY;
+    }
+
     this.camera.lookAt(this.target);
   }
 }

@@ -22,14 +22,14 @@ export class Player {
     const headMat = new THREE.MeshLambertMaterial({ color: 0xd1b8a5 });
     const vestMat = new THREE.MeshLambertMaterial({ color: 0x3a4a2a });
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 0.32), headMat);
-    head.position.y = 0.75;
-    head.castShadow = true;
-    this.group.add(head);
+    this.headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 0.32), headMat);
+    this.headMesh.position.y = 0.75;
+    this.headMesh.castShadow = true;
+    this.group.add(this.headMesh);
     
-    const hair = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), new THREE.MeshLambertMaterial({ color: 0x111111 }));
-    hair.position.set(0, 0.9, -0.02);
-    this.group.add(hair);
+    this.hairMesh = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), new THREE.MeshLambertMaterial({ color: 0x111111 }));
+    this.hairMesh.position.set(0, 0.9, -0.02);
+    this.group.add(this.hairMesh);
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.85, 0.4), bodyMat);
     torso.position.y = 0.15;
@@ -65,9 +65,20 @@ export class Player {
     scene.add(this.group);
   }
 
-  update(dt, input, cameraYaw, colliders) {
+  update(dt, input, cameraYaw, colliders, cameraPitch = 0.28) {
     const isAiming = input.isAiming();
     const currentSpeed = isAiming ? this.aimSpeed : this.speed;
+
+    // Subtle head movement follows the camera vertically.
+    // The torso and legs remain upright.
+    const headTilt = THREE.MathUtils.clamp(
+      -cameraPitch * 0.22,
+      -0.20,
+      0.20
+    );
+    this.headMesh.rotation.x +=
+      (headTilt - this.headMesh.rotation.x) * Math.min(1, dt * 8);
+    this.hairMesh.rotation.x = this.headMesh.rotation.x;
 
     // Animate Arms
     const targetArmX = isAiming ? -Math.PI / 2 : 0;
