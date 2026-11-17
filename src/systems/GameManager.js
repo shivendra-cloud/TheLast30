@@ -16,13 +16,14 @@ export class GameManager {
     this.world = new World(container);
     this.scene = this.world.scene;
     this.map = new CoastalCityMap(this.scene);
-    this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 250);
+    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 250);
     this.world.activeCamera = this.camera;
     
     this.input = new InputManager();
     this.player = new Player(this.scene);
+    this.player.group.visible = false;
     this.cameraCtrl = new CameraController(this.camera, this.input);
-    this.weapon = new Weapon(this.scene, this.player);
+    this.weapon = new Weapon(this.scene, this.camera);
     this.npcManager = new NPCManager(this.scene);
     this.infectionSystem = new InfectionSystem(this.npcManager);
 
