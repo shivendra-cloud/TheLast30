@@ -1,130 +1,993 @@
 import * as THREE from 'three';
 
+/*
+  THE LAST 30
+  Manhattan-inspired survival horror environment.
+
+  - Dense urban street canyon
+  - Volumetric building geometry
+  - Raised sidewalks and curbs
+  - Instanced facade windows
+  - Rooftop machinery
+  - Fire escapes
+  - Parked vehicles and street furniture
+  - Compatible Vector3 collision boxes
+*/
+
 export default class CoastalCityMap {
-  constructor(scene) {
+  constructor(scene, options = {}) {
+    if (!scene) {
+      throw new Error('CoastalCityMap requires a THREE.Scene');
+    }
+
     this.scene = scene;
+    this.options = options;
+
+    this.group = new THREE.Group();
+    this.group.name = 'THE_LAST_30_NYC_CITY';
+
     this.colliders = [];
-    this.build();
+    this.stage = 1;
+    this.stageGroups = [];
+
+    this.geometryCache = new Map();
+    this.windowMatrices = [];
+
+    this.dummy = new THREE.Object3D();
+
+    this.createMaterials();
+    this.createLights();
+
+    this.scene.add(this.group);
+
+    this.createGround();
+    this.createRoadNetwork();
+    this.createBuildings();
+    this.createWindows();
+    this.createFireEscapes();
+    this.createRooftopEquipment();
+    this.createStreetFurniture();
+    this.createStreetLights();
+    this.createTrafficSignals();
+    this.createVehicles();
+    this.createDumpsters();
+    this.createAtmosphere();
+
+    console.log('THE LAST 30: NYC environment generated.');
+    console.log('Collision objects:', this.colliders.length);
   }
 
-  build() {
-    // 1. Concrete Ground (Light Grey)
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
+  // --------------------------------------------------
+  // MATERIALS
+  // --------------------------------------------------
 
-    // 2. Proper Grey Asphalt Road
-    const roadMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(26, 400), roadMat);
-    road.rotation.x = -Math.PI / 2;
-    road.position.set(0, 0.02, 0);
-    road.receiveShadow = true;
-    this.scene.add(road);
+  createMaterials() {
+    const standard = (color, roughness = 0.9, metalness = 0) =>
+      new THREE.MeshStandardMaterial({
+        color,
+        roughness,
+        metalness
+      });
 
-    // 3. Road Lines (Bright White and Yellow)
-    const whiteLine = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const yellowLine = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
+    this.m = {
+      ground: standard(0x555653),
+      asphalt: standard(0x34383a),
+      asphaltPatch: standard(0x414343),
+      concrete: standard(0x858783),
+      sidewalk: standard(0xaaa9a2),
+      curb: standard(0xc0beb6),
 
-    // Double yellow center
-    for (const x of [-0.5, 0.5]) {
-      const line = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 400), yellowLine);
-      line.rotation.x = -Math.PI / 2;
-      line.position.set(x, 0.03, 0);
-      this.scene.add(line);
+      building: [
+        standard(0x777a78),
+        standard(0x8b8176),
+        standard(0x9a958a),
+        standard(0x666c70),
+        standard(0xa39b8c),
+        standard(0x77716b)
+      ],
+
+      brick: standard(0x794f42),
+      darkBrick: standard(0x59463e),
+      roof: standard(0x444746),
+
+      window: new THREE.MeshStandardMaterial({
+        color: 0x253a46,
+        roughness: 0.25,
+        metalness: 0.45
+      }),
+
+      windowLit: new THREE.MeshStandardMaterial({
+        color: 0x9d9576,
+        emissive: 0x5b4827,
+        emissiveIntensity: 0.25,
+        roughness: 0.45
+      }),
+
+      metal: standard(0x555d60, 0.65, 0.35),
+      darkMetal: standard(0x292e30, 0.75, 0.25),
+      rust: standard(0x704a37),
+      yellow: standard(0xd0a82e),
+      white: standard(0xd7d5cb),
+      red: standard(0x873b32),
+      blue: standard(0x3e596c),
+      green: standard(0x425c4b),
+      black: standard(0x171b1c)
+    };
+
+    this.wheelMaterial = new THREE.MeshStandardMaterial({
+      color: 0x17191a,
+      roughness: 1
+    });
+  }
+
+  // --------------------------------------------------
+  // LIGHTING
+  // --------------------------------------------------
+
+  createLights() {
+    this.scene.fog = new THREE.FogExp2(0x9da8ad, 0.0018);
+
+    const hemisphere = new THREE.HemisphereLight(
+      0xdce8f0,
+      0x55504a,
+      1.15
+    );
+
+    hemisphere.name = 'NYC_SKY_AMBIENT';
+    this.scene.add(hemisphere);
+
+    const sun = new THREE.DirectionalLight(
+      0xffe6c4,
+      3.0
+    );
+
+    sun.name = 'NYC_SUN';
+    sun.position.set(-120, 175, 100);
+    sun.target.position.set(0, 0, 0);
+
+    sun.castShadow = true;
+
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.left = -220;
+    sun.shadow.camera.right = 220;
+    sun.shadow.camera.top = 220;
+    sun.shadow.camera.bottom = -220;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 450;
+    sun.shadow.normalBias = 0.035;
+    sun.shadow.bias = -0.00015;
+    sun.shadow.radius = 2;
+
+    this.scene.add(sun);
+    this.scene.add(sun.target);
+
+    this.sun = sun;
+  }
+
+  // --------------------------------------------------
+  // GEOMETRY HELPERS
+  // --------------------------------------------------
+
+  getBoxGeometry(width, height, depth) {
+    const key = `${width.toFixed(2)}_${height.toFixed(2)}_${depth.toFixed(2)}`;
+
+    if (!this.geometryCache.has(key)) {
+      this.geometryCache.set(
+        key,
+        new THREE.BoxGeometry(width, height, depth)
+      );
     }
-    // White lane dashes
-    for (let z = -190; z <= 190; z += 12) {
-      for (const x of [-7, 7]) {
-        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 6), whiteLine);
-        dash.rotation.x = -Math.PI / 2;
-        dash.position.set(x, 0.03, z);
-        this.scene.add(dash);
-      }
+
+    return this.geometryCache.get(key);
+  }
+
+  addBox(
+    x, y, z,
+    width, height, depth,
+    material,
+    options = {}
+  ) {
+    const geometry = this.getBoxGeometry(width, height, depth);
+
+    const mesh = new THREE.Mesh(geometry, material);
+
+    mesh.position.set(x, y, z);
+
+    mesh.castShadow = options.castShadow !== false;
+    mesh.receiveShadow = options.receiveShadow !== false;
+
+    if (options.rotationY) {
+      mesh.rotation.y = options.rotationY;
     }
 
-    // 4. Raised Sidewalks (Creates real 3D depth)
-    const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
-    for (const x of [-16, 16]) {
-      const sidewalk = new THREE.Mesh(new THREE.BoxGeometry(6, 0.4, 400), sidewalkMat);
-      sidewalk.position.set(x, 0.2, 0);
-      sidewalk.receiveShadow = true;
-      sidewalk.castShadow = true;
-      this.scene.add(sidewalk);
+    this.group.add(mesh);
+
+    if (options.collider) {
+      this.addCollider(
+        x, z,
+        width, depth,
+        height,
+        mesh
+      );
     }
 
-    // 5. 3D Skyscrapers with Detailed Geometry
-    const buildingColors = [0x4a4a4a, 0x5c5c5c, 0x3d3d3d, 0x6e6e6e];
-    
-    for (let z = -150; z <= 150; z += 50) {
-      for (const side of [-1, 1]) {
-        const xPos = side * (23 + 10);
-        
-        // Base of the building
-        const h1 = 20 + Math.random() * 10;
-        const mat = new THREE.MeshLambertMaterial({ color: buildingColors[Math.floor(Math.random()*buildingColors.length)] });
-        const base = new THREE.Mesh(new THREE.BoxGeometry(20, h1, 40), mat);
-        base.position.set(xPos, h1 / 2, z);
-        base.castShadow = true;
-        base.receiveShadow = true;
-        this.scene.add(base);
+    return mesh;
+  }
 
-        // Upper tower (Setback)
-        const h2 = 40 + Math.random() * 40;
-        const tower = new THREE.Mesh(new THREE.BoxGeometry(16, h2, 30), mat);
-        tower.position.set(xPos, h1 + h2 / 2, z);
-        tower.castShadow = true;
-        tower.receiveShadow = true;
-        this.scene.add(tower);
+  addCylinder(
+    x, y, z,
+    radiusTop, radiusBottom,
+    height,
+    material,
+    radialSegments = 8
+  ) {
+    const geometry = new THREE.CylinderGeometry(
+      radiusTop,
+      radiusBottom,
+      height,
+      radialSegments
+    );
 
-        // Realistic 3D Windows (Protruding)
-        const winMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
-        for (let r = 0; r < Math.floor(h1/3); r++) {
-          for (let c = -4; c <= 4; c++) {
-            const win = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 0.2), winMat);
-            win.position.set(xPos - side * 10.1, 2 + r*3, z + c*4);
-            this.scene.add(win);
-          }
-        }
+    const mesh = new THREE.Mesh(geometry, material);
 
-        // Collision boxes
-        this.addCollider(xPos, h1/2, z, 20, h1, 40, base);
-        this.addCollider(xPos, h1 + h2/2, z, 16, h2, 30, tower);
-      }
-    }
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
 
-    // 6. 3D Streetlights
-    const poleMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-    for (let z = -140; z <= 140; z += 40) {
-      for (const x of [-14, 14]) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 10, 8), poleMat);
-        pole.position.set(x, 5, z);
-        pole.castShadow = true;
-        this.scene.add(pole);
+    this.group.add(mesh);
 
-        const arm = new THREE.Mesh(new THREE.BoxGeometry(4, 0.2, 0.2), poleMat);
-        arm.position.set(x - Math.sign(x) * 2, 9.8, z);
-        this.scene.add(arm);
+    return mesh;
+  }
 
-        this.addCollider(x, 5, z, 0.4, 10, 0.4, pole);
-      }
-    }
+  // --------------------------------------------------
+  // COLLISION SYSTEM
+  // --------------------------------------------------
 
-    // 7. World Bounds
-    this.colliders.push(
-      { min: new THREE.Vector3(-200, 0, -200), max: new THREE.Vector3(200, 50, -195) },
-      { min: new THREE.Vector3(-200, 0, 195), max: new THREE.Vector3(200, 50, 200) },
-      { min: new THREE.Vector3(-200, 0, -200), max: new THREE.Vector3(-195, 50, 200) },
-      { min: new THREE.Vector3(195, 0, -200), max: new THREE.Vector3(200, 50, 200) }
+  addCollider(x, z, width, depth, height, meshObject) {
+    const collider = {
+      min: new THREE.Vector3(
+        x - width / 2,
+        0,
+        z - depth / 2
+      ),
+
+      max: new THREE.Vector3(
+        x + width / 2,
+        height,
+        z + depth / 2
+      ),
+
+      mesh: meshObject
+    };
+
+    this.colliders.push(collider);
+
+    return collider;
+  }
+
+  getCollisionBoxes() {
+    return this.colliders;
+  }
+
+  getGroup() {
+    return this.group;
+  }
+
+  // --------------------------------------------------
+  // GROUND
+  // --------------------------------------------------
+
+  createGround() {
+    this.addBox(
+      0, -0.6, 0,
+      600, 1, 600,
+      this.m.ground
     );
   }
 
-  addCollider(x, y, z, width, height, depth, mesh) {
-    this.colliders.push({
-      min: new THREE.Vector3(x - width / 2, 0, z - depth / 2),
-      max: new THREE.Vector3(x + width / 2, height, z + depth / 2),
-      mesh: mesh
+  // --------------------------------------------------
+  // ROADS AND RAISED SIDEWALKS
+  // --------------------------------------------------
+
+  createRoadNetwork() {
+    // Main north-south avenue.
+    this.addBox(
+      0, 0.02, 0,
+      29, 0.12, 560,
+      this.m.asphalt
+    );
+
+    // Sidewalks on both sides.
+    for (const side of [-1, 1]) {
+      this.addBox(
+        side * 18.8, 0.16, 0,
+        8.6, 0.32, 560,
+        this.m.sidewalk
+      );
+
+      // Raised curb.
+      this.addBox(
+        side * 14.35, 0.18, 0,
+        0.65, 0.36, 560,
+        this.m.curb
+      );
+
+      // Outer pavement edge.
+      this.addBox(
+        side * 23.4, 0.12, 0,
+        0.6, 0.24, 560,
+        this.m.concrete
+      );
+    }
+
+    // Cross streets.
+    const crossStreets = [-210, -140, -70, 0, 70, 140, 210];
+
+    for (const z of crossStreets) {
+      this.addBox(
+        0, 0.025, z,
+        560, 0.13, 15,
+        this.m.asphalt
+      );
+
+      for (const side of [-1, 1]) {
+        this.addBox(
+          0, 0.12, z + side * 10,
+          560, 0.24, 2.2,
+          this.m.concrete
+        );
+      }
+
+      // Crosswalk markings.
+      for (let x = -11; x <= 11; x += 3) {
+        this.addBox(
+          x, 0.105, z + 9.5,
+          1.5, 0.025, 3.5,
+          this.m.white,
+          { castShadow: false }
+        );
+
+        this.addBox(
+          x, 0.105, z - 9.5,
+          1.5, 0.025, 3.5,
+          this.m.white,
+          { castShadow: false }
+        );
+      }
+    }
+
+    // Broken lane markings.
+    for (let z = -270; z <= 270; z += 16) {
+      this.addBox(
+        0, 0.105, z,
+        0.16, 0.025, 7,
+        this.m.yellow,
+        { castShadow: false }
+      );
+    }
+
+    // Roadside patches and manhole covers.
+    for (let z = -250; z <= 250; z += 35) {
+      this.addCylinder(
+        -9, 0.105, z,
+        0.75, 0.75, 0.035,
+        this.m.darkMetal,
+        16
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // BUILDINGS
+  // --------------------------------------------------
+
+  createBuildings() {
+    this.buildings = [];
+
+    const rows = [-245, -175, -105, -35, 35, 105, 175, 245];
+
+    for (const side of [-1, 1]) {
+      rows.forEach((z, index) => {
+        const width = 21 + (index % 3) * 2;
+        const depth = 47 + (index % 2) * 5;
+        const height = 34 + ((index * 17 + (side === 1 ? 13 : 4)) % 48);
+
+        const x = side * 34;
+
+        this.createBuilding(
+          x,
+          z,
+          width,
+          depth,
+          height,
+          index + (side === 1 ? 10 : 0)
+        );
+      });
+    }
+
+    // Second row of buildings creates deeper urban blocks.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 7; i++) {
+        const x = side * 88;
+        const z = -210 + i * 70;
+
+        this.createBuilding(
+          x,
+          z,
+          35 + (i % 2) * 8,
+          49,
+          30 + ((i * 19) % 45),
+          i + 20
+        );
+      }
+    }
+
+    // Larger distant city blocks.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 5; i++) {
+        this.createBuilding(
+          side * 145,
+          -180 + i * 90,
+          50,
+          65,
+          48 + (i % 3) * 22,
+          i + 40
+        );
+      }
+    }
+  }
+
+  createBuilding(x, z, width, depth, height, seed) {
+    const material = this.m.building[
+      Math.abs(seed) % this.m.building.length
+    ];
+
+    const baseY = height / 2;
+
+    // Main building volume.
+    const main = this.addBox(
+      x, baseY, z,
+      width, height, depth,
+      material,
+      { collider: true }
+    );
+
+    main.name = `BUILDING_${seed}`;
+
+    this.buildings.push({
+      x, z, width, depth, height, seed
     });
+
+    // Raised roof parapet.
+    this.addBox(
+      x, height + 0.6, z,
+      width + 0.5, 1.2, depth + 0.5,
+      this.m.roof
+    );
+
+    // Layered rooftop setback.
+    if (height > 48) {
+      const setbackWidth = width * 0.65;
+      const setbackDepth = depth * 0.68;
+      const setbackHeight = 5 + (seed % 4);
+
+      this.addBox(
+        x + 1.5,
+        height + setbackHeight / 2,
+        z - 2,
+        setbackWidth,
+        setbackHeight,
+        setbackDepth,
+        material
+      );
+
+      this.addBox(
+        x + 1.5,
+        height + setbackHeight + 0.5,
+        z - 2,
+        setbackWidth + 0.4,
+        1,
+        setbackDepth + 0.4,
+        this.m.roof
+      );
+    }
+
+    // Ground-floor shopfront.
+    const frontX = x - Math.sign(x) * (width / 2 + 0.03);
+
+    this.addBox(
+      frontX,
+      2.0,
+      z,
+      0.12,
+      3.6,
+      depth * 0.65,
+      this.m.darkMetal
+    );
+
+    // Storefront sign.
+    this.addBox(
+      frontX - Math.sign(x) * 0.09,
+      4.1,
+      z,
+      0.15,
+      0.55,
+      depth * 0.45,
+      this.m.rust
+    );
+
+    // Side alley passage is left open between buildings.
+  }
+
+  // --------------------------------------------------
+  // INSTANCED WINDOWS
+  // --------------------------------------------------
+
+  createWindows() {
+    const geometry = new THREE.BoxGeometry(1.05, 1.35, 0.13);
+
+    const darkMatrices = [];
+    const litMatrices = [];
+
+    for (const b of this.buildings) {
+      const floors = Math.max(2, Math.floor(b.height / 4.2));
+      const columns = Math.max(2, Math.floor(b.depth / 4.5));
+
+      for (let floor = 1; floor < floors; floor++) {
+        const y = floor * 4.0 + 1.5;
+
+        // Windows on the two long facades.
+        for (let c = 0; c < columns; c++) {
+          const z = b.z - b.depth / 2 + 3 + c * 4.2;
+
+          for (const side of [-1, 1]) {
+            this.dummy.position.set(
+              b.x + side * (b.width / 2 + 0.075),
+              y,
+              z
+            );
+
+            this.dummy.rotation.set(0, Math.PI / 2, 0);
+            this.dummy.updateMatrix();
+
+            const target = (c + floor + b.seed) % 9 === 0
+              ? litMatrices
+              : darkMatrices;
+
+            target.push(this.dummy.matrix.clone());
+          }
+        }
+
+        // Windows on the street-facing end walls.
+        for (const side of [-1, 1]) {
+          const x = b.x - b.width / 2 + 3 + side * 1.5;
+
+          this.dummy.position.set(
+            x,
+            y,
+            b.z - Math.sign(b.z || 1) * (b.depth / 2 + 0.075)
+          );
+
+          this.dummy.rotation.set(0, 0, 0);
+          this.dummy.updateMatrix();
+
+          darkMatrices.push(this.dummy.matrix.clone());
+        }
+      }
+    }
+
+    this.addInstancedWindows(geometry, this.m.window, darkMatrices);
+    this.addInstancedWindows(geometry, this.m.windowLit, litMatrices);
+  }
+
+  addInstancedWindows(geometry, material, matrices) {
+    if (!matrices.length) return;
+
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      material,
+      matrices.length
+    );
+
+    matrices.forEach((matrix, index) => {
+      mesh.setMatrixAt(index, matrix);
+    });
+
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+
+    this.group.add(mesh);
+  }
+
+  // --------------------------------------------------
+  // FIRE ESCAPES
+  // --------------------------------------------------
+
+  createFireEscapes() {
+    const selected = this.buildings.filter(
+      (b, i) => i % 3 === 0 && b.height > 28
+    );
+
+    for (const b of selected) {
+      const x = b.x - Math.sign(b.x) * (b.width / 2 + 0.8);
+
+      const levels = Math.min(
+        5,
+        Math.floor((b.height - 5) / 7)
+      );
+
+      for (let floor = 1; floor <= levels; floor++) {
+        const y = floor * 7;
+
+        // Platform.
+        this.addBox(
+          x, y, b.z,
+          1.8, 0.18, 8,
+          this.m.metal
+        );
+
+        // Outer railing.
+        this.addBox(
+          x - Math.sign(b.x) * 0.8,
+          y + 0.55,
+          b.z,
+          0.12, 1.1, 8,
+          this.m.darkMetal
+        );
+
+        // Side railings.
+        for (const side of [-1, 1]) {
+          this.addBox(
+            x, y + 0.55, b.z + side * 3.9,
+            1.8, 1.1, 0.12,
+            this.m.darkMetal
+          );
+        }
+      }
+
+      // Vertical ladder.
+      this.addBox(
+        x - Math.sign(b.x) * 1.0,
+        b.height / 2,
+        b.z,
+        0.12,
+        b.height,
+        0.12,
+        this.m.rust
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // ROOFTOP MACHINERY
+  // --------------------------------------------------
+
+  createRooftopEquipment() {
+    for (const b of this.buildings) {
+      const count = 1 + (b.seed % 3);
+
+      for (let i = 0; i < count; i++) {
+        const x = b.x + (i - 1) * 3;
+        const z = b.z + (i % 2) * 5;
+
+        // HVAC unit.
+        this.addBox(
+          x,
+          b.height + 1.8,
+          z,
+          2.5, 2.2, 2.1,
+          this.m.metal
+        );
+
+        // Vent.
+        this.addBox(
+          x,
+          b.height + 3.0,
+          z,
+          1.6, 0.3, 1.5,
+          this.m.darkMetal
+        );
+      }
+    }
+  }
+
+  // --------------------------------------------------
+  // STREET FURNITURE
+  // --------------------------------------------------
+
+  createStreetFurniture() {
+    for (let z = -230; z <= 230; z += 35) {
+      for (const side of [-1, 1]) {
+        const x = side * 21.5;
+
+        // Trash bin.
+        this.addBox(
+          x, 0.85, z,
+          1.1, 1.7, 1.0,
+          this.m.darkMetal
+        );
+
+        // Bench.
+        this.addBox(
+          side * 18.8, 0.75, z + 5,
+          2.5, 0.25, 0.8,
+          this.m.rust
+        );
+
+        // Bench legs.
+        for (const offset of [-0.9, 0.9]) {
+          this.addBox(
+            side * 18.8 + offset,
+            0.35,
+            z + 5,
+            0.15, 0.7, 0.15,
+            this.m.darkMetal
+          );
+        }
+      }
+    }
+
+    // Roadside barriers and damaged concrete blocks.
+    for (let z = -200; z <= 200; z += 65) {
+      this.addBox(
+        -12.5, 0.7, z,
+        1.1, 1.4, 2.2,
+        this.m.concrete
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // STREETLIGHTS
+  // --------------------------------------------------
+
+  createStreetLights() {
+    for (let z = -245; z <= 245; z += 55) {
+      for (const side of [-1, 1]) {
+        const x = side * 12.5;
+
+        this.addCylinder(
+          x, 5, z,
+          0.12, 0.18, 10,
+          this.m.darkMetal,
+          8
+        );
+
+        this.addBox(
+          x + side * 1.0,
+          9.7,
+          z,
+          2.1, 0.15, 0.15,
+          this.m.darkMetal
+        );
+
+        this.addBox(
+          x + side * 1.9,
+          9.35,
+          z,
+          0.8, 0.3, 0.65,
+          this.m.yellow
+        );
+      }
+    }
+  }
+
+  // --------------------------------------------------
+  // TRAFFIC SIGNALS
+  // --------------------------------------------------
+
+  createTrafficSignals() {
+    for (const z of [-140, 0, 140]) {
+      for (const side of [-1, 1]) {
+        const x = side * 13.5;
+
+        this.addCylinder(
+          x, 4, z,
+          0.09, 0.12, 8,
+          this.m.darkMetal,
+          8
+        );
+
+        this.addBox(
+          x,
+          7.7,
+          z + 1.0,
+          0.65, 1.7, 0.55,
+          this.m.black
+        );
+
+        this.addBox(
+          x,
+          8.1,
+          z + 1.29,
+          0.25, 0.25, 0.08,
+          this.m.red
+        );
+
+        this.addBox(
+          x,
+          7.7,
+          z + 1.29,
+          0.25, 0.25, 0.08,
+          this.m.yellow
+        );
+
+        this.addBox(
+          x,
+          7.3,
+          z + 1.29,
+          0.25, 0.25, 0.08,
+          this.m.green
+        );
+      }
+    }
+  }
+
+  // --------------------------------------------------
+  // PARKED VEHICLES
+  // --------------------------------------------------
+
+  createVehicles() {
+    const colors = [
+      this.m.blue,
+      this.m.white,
+      this.m.red,
+      this.m.green,
+      this.m.darkMetal
+    ];
+
+    for (let i = 0; i < 12; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const z = -220 + Math.floor(i / 2) * 75;
+      const x = side * 10.5;
+
+      this.createCar(
+        x,
+        z,
+        colors[i % colors.length],
+        i % 3 === 0
+      );
+    }
+  }
+
+  createCar(x, z, color, damaged = false) {
+    const body = this.addBox(
+      x, 0.85, z,
+      2.2, 1.0, 4.4,
+      color,
+      { collider: true }
+    );
+
+    body.name = 'PARKED_CAR';
+
+    this.addBox(
+      x, 1.55, z - 0.15,
+      1.85, 0.65, 2.35,
+      this.m.darkMetal
+    );
+
+    // Windshield and rear glass.
+    this.addBox(
+      x, 1.62, z - 1.38,
+      1.65, 0.5, 0.08,
+      this.m.window
+    );
+
+    this.addBox(
+      x, 1.62, z + 1.12,
+      1.65, 0.5, 0.08,
+      this.m.window
+    );
+
+    // Wheels.
+    for (const dx of [-1.05, 1.05]) {
+      for (const dz of [-1.35, 1.35]) {
+        const wheel = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.42, 0.42, 0.22, 10),
+          this.wheelMaterial
+        );
+
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(x + dx, 0.55, z + dz);
+        wheel.castShadow = true;
+
+        this.group.add(wheel);
+      }
+    }
+
+    if (damaged) {
+      this.addBox(
+        x + 0.2, 1.9, z,
+        0.5, 0.15, 0.7,
+        this.m.rust
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // DUMPSTERS
+  // --------------------------------------------------
+
+  createDumpsters() {
+    const positions = [
+      [-24, -175],
+      [24, -105],
+      [-24, 35],
+      [24, 175],
+      [-24, 245]
+    ];
+
+    for (const [x, z] of positions) {
+      this.addBox(
+        x, 1.0, z,
+        3.0, 2.0, 1.8,
+        this.m.green,
+        { collider: true }
+      );
+
+      this.addBox(
+        x, 2.1, z,
+        3.1, 0.2, 1.9,
+        this.m.darkMetal
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // ATMOSPHERE
+  // --------------------------------------------------
+
+  createAtmosphere() {
+    // Distant skyline silhouettes.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 12; i++) {
+        const x = side * (205 + (i % 3) * 22);
+        const z = -250 + i * 42;
+        const height = 55 + (i * 13) % 70;
+
+        this.addBox(
+          x,
+          height / 2,
+          z,
+          28, height, 32,
+          this.m.building[i % this.m.building.length]
+        );
+      }
+    }
+  }
+
+  // --------------------------------------------------
+  // STAGE API
+  // --------------------------------------------------
+
+  setStage(stage) {
+    this.stage = Math.max(1, Math.min(3, stage));
+
+    for (const group of this.stageGroups) {
+      group.visible = true;
+    }
+  }
+
+  // --------------------------------------------------
+  // CLEANUP
+  // --------------------------------------------------
+
+  dispose() {
+    this.scene.remove(this.group);
+    this.scene.remove(this.sun);
+    this.scene.remove(this.sun.target);
+
+    for (const geometry of this.geometryCache.values()) {
+      geometry.dispose();
+    }
+
+    this.group.traverse(object => {
+      if (object.isInstancedMesh) {
+        object.dispose();
+      }
+    });
+
+    this.colliders.length = 0;
   }
 }
