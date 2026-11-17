@@ -1,0 +1,51 @@
+import * as THREE from 'three';
+
+export class CameraController {
+  constructor(camera, input) {
+    this.camera = camera;
+    this.input = input;
+
+    this.yaw = 0;
+    this.pitch = 0;
+
+    this.sensitivity = 0.0022;
+
+    // Keep the camera at natural eye level.
+    this.eyeHeight = 0.72;
+
+    // Prevent camera roll and upside-down movement.
+    this.minPitch = -Math.PI / 2 + 0.01;
+    this.maxPitch = Math.PI / 2 - 0.01;
+
+    this.camera.rotation.order = 'YXZ';
+  }
+
+  update(dt, player, colliders = []) {
+    const { dx, dy } = this.input.consumeMouseDelta();
+
+    // Direct FPS mouse look.
+    this.yaw -= dx * this.sensitivity;
+    this.pitch -= dy * this.sensitivity;
+
+    this.pitch = THREE.MathUtils.clamp(
+      this.pitch,
+      this.minPitch,
+      this.maxPitch
+    );
+
+    // Camera follows the player's position at eye height.
+    this.camera.position.set(
+      player.position.x,
+      player.position.y + this.eyeHeight,
+      player.position.z
+    );
+
+    // Apply FPS rotation directly.
+    this.camera.rotation.set(
+      this.pitch,
+      this.yaw,
+      0,
+      'YXZ'
+    );
+  }
+}
