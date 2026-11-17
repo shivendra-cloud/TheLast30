@@ -1,19 +1,5 @@
 import * as THREE from 'three';
 
-/*
-  THE LAST 30
-  Manhattan-inspired survival horror environment.
-
-  - Dense urban street canyon
-  - Volumetric building geometry
-  - Raised sidewalks and curbs
-  - Instanced facade windows
-  - Rooftop machinery
-  - Fire escapes
-  - Parked vehicles and street furniture
-  - Compatible Vector3 collision boxes
-*/
-
 export default class CoastalCityMap {
   constructor(scene, options = {}) {
     if (!scene) {
@@ -22,21 +8,18 @@ export default class CoastalCityMap {
 
     this.scene = scene;
     this.options = options;
-
     this.group = new THREE.Group();
     this.group.name = 'THE_LAST_30_NYC_CITY';
 
     this.colliders = [];
+    this.buildings = [];
     this.stage = 1;
     this.stageGroups = [];
-
     this.geometryCache = new Map();
-    this.windowMatrices = [];
-
     this.dummy = new THREE.Object3D();
 
     this.createMaterials();
-    this.createLights();
+    this.createLighting();
 
     this.scene.add(this.group);
 
@@ -51,18 +34,16 @@ export default class CoastalCityMap {
     this.createTrafficSignals();
     this.createVehicles();
     this.createDumpsters();
-    this.createAtmosphere();
+    this.createDistantBuildings();
 
-    console.log('THE LAST 30: NYC environment generated.');
+    console.log('THE LAST 30: NYC city generated.');
     console.log('Collision objects:', this.colliders.length);
   }
 
-  // --------------------------------------------------
   // MATERIALS
-  // --------------------------------------------------
 
   createMaterials() {
-    const standard = (color, roughness = 0.9, metalness = 0) =>
+    const mat = (color, roughness = 0.9, metalness = 0) =>
       new THREE.MeshStandardMaterial({
         color,
         roughness,
@@ -70,25 +51,25 @@ export default class CoastalCityMap {
       });
 
     this.m = {
-      ground: standard(0x555653),
-      asphalt: standard(0x34383a),
-      asphaltPatch: standard(0x414343),
-      concrete: standard(0x858783),
-      sidewalk: standard(0xaaa9a2),
-      curb: standard(0xc0beb6),
+      ground: mat(0x555653),
+      asphalt: mat(0x34383a),
+      asphaltPatch: mat(0x414343),
+      concrete: mat(0x858783),
+      sidewalk: mat(0xaaa9a2),
+      curb: mat(0xc0beb6),
 
-      building: [
-        standard(0x777a78),
-        standard(0x8b8176),
-        standard(0x9a958a),
-        standard(0x666c70),
-        standard(0xa39b8c),
-        standard(0x77716b)
+      buildings: [
+        mat(0x777a78),
+        mat(0x8b8176),
+        mat(0x9a958a),
+        mat(0x666c70),
+        mat(0xa39b8c),
+        mat(0x77716b)
       ],
 
-      brick: standard(0x794f42),
-      darkBrick: standard(0x59463e),
-      roof: standard(0x444746),
+      brick: mat(0x794f42),
+      darkBrick: mat(0x59463e),
+      roof: mat(0x444746),
 
       window: new THREE.MeshStandardMaterial({
         color: 0x253a46,
@@ -103,28 +84,23 @@ export default class CoastalCityMap {
         roughness: 0.45
       }),
 
-      metal: standard(0x555d60, 0.65, 0.35),
-      darkMetal: standard(0x292e30, 0.75, 0.25),
-      rust: standard(0x704a37),
-      yellow: standard(0xd0a82e),
-      white: standard(0xd7d5cb),
-      red: standard(0x873b32),
-      blue: standard(0x3e596c),
-      green: standard(0x425c4b),
-      black: standard(0x171b1c)
+      metal: mat(0x555d60, 0.65, 0.35),
+      darkMetal: mat(0x292e30, 0.75, 0.25),
+      rust: mat(0x704a37),
+      yellow: mat(0xd0a82e),
+      white: mat(0xd7d5cb),
+      red: mat(0x873b32),
+      blue: mat(0x3e596c),
+      green: mat(0x425c4b),
+      black: mat(0x171b1c)
     };
 
-    this.wheelMaterial = new THREE.MeshStandardMaterial({
-      color: 0x17191a,
-      roughness: 1
-    });
+    this.wheelMaterial = mat(0x17191a, 1);
   }
 
-  // --------------------------------------------------
-  // LIGHTING
-  // --------------------------------------------------
+  // LIGHTING AND FOG
 
-  createLights() {
+  createLighting() {
     this.scene.fog = new THREE.FogExp2(0x9da8ad, 0.0018);
 
     const hemisphere = new THREE.HemisphereLight(
@@ -133,18 +109,13 @@ export default class CoastalCityMap {
       1.15
     );
 
-    hemisphere.name = 'NYC_SKY_AMBIENT';
     this.scene.add(hemisphere);
+    this.hemisphere = hemisphere;
 
-    const sun = new THREE.DirectionalLight(
-      0xffe6c4,
-      3.0
-    );
+    const sun = new THREE.DirectionalLight(0xffe6c4, 3.0);
 
-    sun.name = 'NYC_SUN';
     sun.position.set(-120, 175, 100);
     sun.target.position.set(0, 0, 0);
-
     sun.castShadow = true;
 
     sun.shadow.mapSize.set(2048, 2048);
@@ -164,9 +135,7 @@ export default class CoastalCityMap {
     this.sun = sun;
   }
 
-  // --------------------------------------------------
   // GEOMETRY HELPERS
-  // --------------------------------------------------
 
   getBoxGeometry(width, height, depth) {
     const key = `${width.toFixed(2)}_${height.toFixed(2)}_${depth.toFixed(2)}`;
@@ -181,18 +150,13 @@ export default class CoastalCityMap {
     return this.geometryCache.get(key);
   }
 
-  addBox(
-    x, y, z,
-    width, height, depth,
-    material,
-    options = {}
-  ) {
-    const geometry = this.getBoxGeometry(width, height, depth);
-
-    const mesh = new THREE.Mesh(geometry, material);
+  addBox(x, y, z, width, height, depth, material, options = {}) {
+    const mesh = new THREE.Mesh(
+      this.getBoxGeometry(width, height, depth),
+      material
+    );
 
     mesh.position.set(x, y, z);
-
     mesh.castShadow = options.castShadow !== false;
     mesh.receiveShadow = options.receiveShadow !== false;
 
@@ -203,45 +167,32 @@ export default class CoastalCityMap {
     this.group.add(mesh);
 
     if (options.collider) {
-      this.addCollider(
-        x, z,
-        width, depth,
-        height,
-        mesh
-      );
+      this.addCollider(x, z, width, depth, height, mesh);
     }
 
     return mesh;
   }
 
-  addCylinder(
-    x, y, z,
-    radiusTop, radiusBottom,
-    height,
-    material,
-    radialSegments = 8
-  ) {
-    const geometry = new THREE.CylinderGeometry(
-      radiusTop,
-      radiusBottom,
-      height,
-      radialSegments
+  addCylinder(x, y, z, radiusTop, radiusBottom, height, material, segments = 8) {
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(
+        radiusTop,
+        radiusBottom,
+        height,
+        segments
+      ),
+      material
     );
-
-    const mesh = new THREE.Mesh(geometry, material);
 
     mesh.position.set(x, y, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
 
     this.group.add(mesh);
-
     return mesh;
   }
 
-  // --------------------------------------------------
-  // COLLISION SYSTEM
-  // --------------------------------------------------
+  // COLLIDERS: PLAYER AND NPC COMPATIBILITY
 
   addCollider(x, z, width, depth, height, meshObject) {
     const collider = {
@@ -250,18 +201,15 @@ export default class CoastalCityMap {
         0,
         z - depth / 2
       ),
-
       max: new THREE.Vector3(
         x + width / 2,
         height,
         z + depth / 2
       ),
-
       mesh: meshObject
     };
 
     this.colliders.push(collider);
-
     return collider;
   }
 
@@ -273,9 +221,7 @@ export default class CoastalCityMap {
     return this.group;
   }
 
-  // --------------------------------------------------
   // GROUND
-  // --------------------------------------------------
 
   createGround() {
     this.addBox(
@@ -285,19 +231,15 @@ export default class CoastalCityMap {
     );
   }
 
-  // --------------------------------------------------
-  // ROADS AND RAISED SIDEWALKS
-  // --------------------------------------------------
+  // ROADS AND SIDEWALKS
 
   createRoadNetwork() {
-    // Main north-south avenue.
     this.addBox(
       0, 0.02, 0,
       29, 0.12, 560,
       this.m.asphalt
     );
 
-    // Sidewalks on both sides.
     for (const side of [-1, 1]) {
       this.addBox(
         side * 18.8, 0.16, 0,
@@ -305,14 +247,12 @@ export default class CoastalCityMap {
         this.m.sidewalk
       );
 
-      // Raised curb.
       this.addBox(
         side * 14.35, 0.18, 0,
         0.65, 0.36, 560,
         this.m.curb
       );
 
-      // Outer pavement edge.
       this.addBox(
         side * 23.4, 0.12, 0,
         0.6, 0.24, 560,
@@ -320,7 +260,6 @@ export default class CoastalCityMap {
       );
     }
 
-    // Cross streets.
     const crossStreets = [-210, -140, -70, 0, 70, 140, 210];
 
     for (const z of crossStreets) {
@@ -338,7 +277,6 @@ export default class CoastalCityMap {
         );
       }
 
-      // Crosswalk markings.
       for (let x = -11; x <= 11; x += 3) {
         this.addBox(
           x, 0.105, z + 9.5,
@@ -356,7 +294,6 @@ export default class CoastalCityMap {
       }
     }
 
-    // Broken lane markings.
     for (let z = -270; z <= 270; z += 16) {
       this.addBox(
         0, 0.105, z,
@@ -366,7 +303,6 @@ export default class CoastalCityMap {
       );
     }
 
-    // Roadside patches and manhole covers.
     for (let z = -250; z <= 250; z += 35) {
       this.addCylinder(
         -9, 0.105, z,
@@ -377,25 +313,21 @@ export default class CoastalCityMap {
     }
   }
 
-  // --------------------------------------------------
   // BUILDINGS
-  // --------------------------------------------------
 
   createBuildings() {
-    this.buildings = [];
-
     const rows = [-245, -175, -105, -35, 35, 105, 175, 245];
 
     for (const side of [-1, 1]) {
       rows.forEach((z, index) => {
         const width = 21 + (index % 3) * 2;
         const depth = 47 + (index % 2) * 5;
-        const height = 34 + ((index * 17 + (side === 1 ? 13 : 4)) % 48);
-
-        const x = side * 34;
+        const height = 34 + (
+          (index * 17 + (side === 1 ? 13 : 4)) % 48
+        );
 
         this.createBuilding(
-          x,
+          side * 34,
           z,
           width,
           depth,
@@ -405,15 +337,11 @@ export default class CoastalCityMap {
       });
     }
 
-    // Second row of buildings creates deeper urban blocks.
     for (const side of [-1, 1]) {
       for (let i = 0; i < 7; i++) {
-        const x = side * 88;
-        const z = -210 + i * 70;
-
         this.createBuilding(
-          x,
-          z,
+          side * 88,
+          -210 + i * 70,
           35 + (i % 2) * 8,
           49,
           30 + ((i * 19) % 45),
@@ -422,7 +350,6 @@ export default class CoastalCityMap {
       }
     }
 
-    // Larger distant city blocks.
     for (const side of [-1, 1]) {
       for (let i = 0; i < 5; i++) {
         this.createBuilding(
@@ -438,16 +365,17 @@ export default class CoastalCityMap {
   }
 
   createBuilding(x, z, width, depth, height, seed) {
-    const material = this.m.building[
-      Math.abs(seed) % this.m.building.length
+    const material = this.m.buildings[
+      Math.abs(seed) % this.m.buildings.length
     ];
 
-    const baseY = height / 2;
-
-    // Main building volume.
     const main = this.addBox(
-      x, baseY, z,
-      width, height, depth,
+      x,
+      height / 2,
+      z,
+      width,
+      height,
+      depth,
       material,
       { collider: true }
     );
@@ -458,74 +386,57 @@ export default class CoastalCityMap {
       x, z, width, depth, height, seed
     });
 
-    // Raised roof parapet.
+    // Roof parapet
     this.addBox(
       x, height + 0.6, z,
       width + 0.5, 1.2, depth + 0.5,
       this.m.roof
     );
 
-    // Layered rooftop setback.
+    // Layered rooftop setback
     if (height > 48) {
-      const setbackWidth = width * 0.65;
-      const setbackDepth = depth * 0.68;
-      const setbackHeight = 5 + (seed % 4);
+      const sw = width * 0.65;
+      const sd = depth * 0.68;
+      const sh = 5 + (seed % 4);
 
       this.addBox(
         x + 1.5,
-        height + setbackHeight / 2,
+        height + sh / 2,
         z - 2,
-        setbackWidth,
-        setbackHeight,
-        setbackDepth,
+        sw, sh, sd,
         material
       );
 
       this.addBox(
         x + 1.5,
-        height + setbackHeight + 0.5,
+        height + sh + 0.5,
         z - 2,
-        setbackWidth + 0.4,
-        1,
-        setbackDepth + 0.4,
+        sw + 0.4, 1, sd + 0.4,
         this.m.roof
       );
     }
 
-    // Ground-floor shopfront.
+    // Shopfront
     const frontX = x - Math.sign(x) * (width / 2 + 0.03);
 
     this.addBox(
-      frontX,
-      2.0,
-      z,
-      0.12,
-      3.6,
-      depth * 0.65,
+      frontX, 2, z,
+      0.12, 3.6, depth * 0.65,
       this.m.darkMetal
     );
 
-    // Storefront sign.
     this.addBox(
       frontX - Math.sign(x) * 0.09,
-      4.1,
-      z,
-      0.15,
-      0.55,
-      depth * 0.45,
+      4.1, z,
+      0.15, 0.55, depth * 0.45,
       this.m.rust
     );
-
-    // Side alley passage is left open between buildings.
   }
 
-  // --------------------------------------------------
-  // INSTANCED WINDOWS
-  // --------------------------------------------------
+  // WINDOWS USING INSTANCED MESHES
 
   createWindows() {
     const geometry = new THREE.BoxGeometry(1.05, 1.35, 0.13);
-
     const darkMatrices = [];
     const litMatrices = [];
 
@@ -534,9 +445,8 @@ export default class CoastalCityMap {
       const columns = Math.max(2, Math.floor(b.depth / 4.5));
 
       for (let floor = 1; floor < floors; floor++) {
-        const y = floor * 4.0 + 1.5;
+        const y = floor * 4 + 1.5;
 
-        // Windows on the two long facades.
         for (let c = 0; c < columns; c++) {
           const z = b.z - b.depth / 2 + 3 + c * 4.2;
 
@@ -558,12 +468,11 @@ export default class CoastalCityMap {
           }
         }
 
-        // Windows on the street-facing end walls.
         for (const side of [-1, 1]) {
-          const x = b.x - b.width / 2 + 3 + side * 1.5;
+          const wx = b.x - b.width / 2 + 3 + side * 1.5;
 
           this.dummy.position.set(
-            x,
+            wx,
             y,
             b.z - Math.sign(b.z || 1) * (b.depth / 2 + 0.075)
           );
@@ -600,9 +509,7 @@ export default class CoastalCityMap {
     this.group.add(mesh);
   }
 
-  // --------------------------------------------------
   // FIRE ESCAPES
-  // --------------------------------------------------
 
   createFireEscapes() {
     const selected = this.buildings.filter(
@@ -611,32 +518,24 @@ export default class CoastalCityMap {
 
     for (const b of selected) {
       const x = b.x - Math.sign(b.x) * (b.width / 2 + 0.8);
-
-      const levels = Math.min(
-        5,
-        Math.floor((b.height - 5) / 7)
-      );
+      const levels = Math.min(5, Math.floor((b.height - 5) / 7));
 
       for (let floor = 1; floor <= levels; floor++) {
         const y = floor * 7;
 
-        // Platform.
         this.addBox(
           x, y, b.z,
           1.8, 0.18, 8,
           this.m.metal
         );
 
-        // Outer railing.
         this.addBox(
           x - Math.sign(b.x) * 0.8,
-          y + 0.55,
-          b.z,
+          y + 0.55, b.z,
           0.12, 1.1, 8,
           this.m.darkMetal
         );
 
-        // Side railings.
         for (const side of [-1, 1]) {
           this.addBox(
             x, y + 0.55, b.z + side * 3.9,
@@ -646,22 +545,17 @@ export default class CoastalCityMap {
         }
       }
 
-      // Vertical ladder.
       this.addBox(
-        x - Math.sign(b.x) * 1.0,
+        x - Math.sign(b.x),
         b.height / 2,
         b.z,
-        0.12,
-        b.height,
-        0.12,
+        0.12, b.height, 0.12,
         this.m.rust
       );
     }
   }
 
-  // --------------------------------------------------
-  // ROOFTOP MACHINERY
-  // --------------------------------------------------
+  // ROOFTOP AIR CONDITIONING
 
   createRooftopEquipment() {
     for (const b of this.buildings) {
@@ -671,20 +565,14 @@ export default class CoastalCityMap {
         const x = b.x + (i - 1) * 3;
         const z = b.z + (i % 2) * 5;
 
-        // HVAC unit.
         this.addBox(
-          x,
-          b.height + 1.8,
-          z,
+          x, b.height + 1.8, z,
           2.5, 2.2, 2.1,
           this.m.metal
         );
 
-        // Vent.
         this.addBox(
-          x,
-          b.height + 3.0,
-          z,
+          x, b.height + 3, z,
           1.6, 0.3, 1.5,
           this.m.darkMetal
         );
@@ -692,35 +580,29 @@ export default class CoastalCityMap {
     }
   }
 
-  // --------------------------------------------------
   // STREET FURNITURE
-  // --------------------------------------------------
 
   createStreetFurniture() {
     for (let z = -230; z <= 230; z += 35) {
       for (const side of [-1, 1]) {
         const x = side * 21.5;
 
-        // Trash bin.
         this.addBox(
           x, 0.85, z,
-          1.1, 1.7, 1.0,
+          1.1, 1.7, 1,
           this.m.darkMetal
         );
 
-        // Bench.
         this.addBox(
           side * 18.8, 0.75, z + 5,
           2.5, 0.25, 0.8,
           this.m.rust
         );
 
-        // Bench legs.
         for (const offset of [-0.9, 0.9]) {
           this.addBox(
             side * 18.8 + offset,
-            0.35,
-            z + 5,
+            0.35, z + 5,
             0.15, 0.7, 0.15,
             this.m.darkMetal
           );
@@ -728,7 +610,6 @@ export default class CoastalCityMap {
       }
     }
 
-    // Roadside barriers and damaged concrete blocks.
     for (let z = -200; z <= 200; z += 65) {
       this.addBox(
         -12.5, 0.7, z,
@@ -738,9 +619,7 @@ export default class CoastalCityMap {
     }
   }
 
-  // --------------------------------------------------
   // STREETLIGHTS
-  // --------------------------------------------------
 
   createStreetLights() {
     for (let z = -245; z <= 245; z += 55) {
@@ -755,17 +634,13 @@ export default class CoastalCityMap {
         );
 
         this.addBox(
-          x + side * 1.0,
-          9.7,
-          z,
+          x + side, 9.7, z,
           2.1, 0.15, 0.15,
           this.m.darkMetal
         );
 
         this.addBox(
-          x + side * 1.9,
-          9.35,
-          z,
+          x + side * 1.9, 9.35, z,
           0.8, 0.3, 0.65,
           this.m.yellow
         );
@@ -773,9 +648,7 @@ export default class CoastalCityMap {
     }
   }
 
-  // --------------------------------------------------
   // TRAFFIC SIGNALS
-  // --------------------------------------------------
 
   createTrafficSignals() {
     for (const z of [-140, 0, 140]) {
@@ -790,33 +663,25 @@ export default class CoastalCityMap {
         );
 
         this.addBox(
-          x,
-          7.7,
-          z + 1.0,
+          x, 7.7, z + 1,
           0.65, 1.7, 0.55,
           this.m.black
         );
 
         this.addBox(
-          x,
-          8.1,
-          z + 1.29,
+          x, 8.1, z + 1.29,
           0.25, 0.25, 0.08,
           this.m.red
         );
 
         this.addBox(
-          x,
-          7.7,
-          z + 1.29,
+          x, 7.7, z + 1.29,
           0.25, 0.25, 0.08,
           this.m.yellow
         );
 
         this.addBox(
-          x,
-          7.3,
-          z + 1.29,
+          x, 7.3, z + 1.29,
           0.25, 0.25, 0.08,
           this.m.green
         );
@@ -824,9 +689,7 @@ export default class CoastalCityMap {
     }
   }
 
-  // --------------------------------------------------
   // PARKED VEHICLES
-  // --------------------------------------------------
 
   createVehicles() {
     const colors = [
@@ -854,7 +717,7 @@ export default class CoastalCityMap {
   createCar(x, z, color, damaged = false) {
     const body = this.addBox(
       x, 0.85, z,
-      2.2, 1.0, 4.4,
+      2.2, 1, 4.4,
       color,
       { collider: true }
     );
@@ -867,7 +730,6 @@ export default class CoastalCityMap {
       this.m.darkMetal
     );
 
-    // Windshield and rear glass.
     this.addBox(
       x, 1.62, z - 1.38,
       1.65, 0.5, 0.08,
@@ -880,7 +742,6 @@ export default class CoastalCityMap {
       this.m.window
     );
 
-    // Wheels.
     for (const dx of [-1.05, 1.05]) {
       for (const dz of [-1.35, 1.35]) {
         const wheel = new THREE.Mesh(
@@ -905,9 +766,7 @@ export default class CoastalCityMap {
     }
   }
 
-  // --------------------------------------------------
   // DUMPSTERS
-  // --------------------------------------------------
 
   createDumpsters() {
     const positions = [
@@ -920,8 +779,8 @@ export default class CoastalCityMap {
 
     for (const [x, z] of positions) {
       this.addBox(
-        x, 1.0, z,
-        3.0, 2.0, 1.8,
+        x, 1, z,
+        3, 2, 1.8,
         this.m.green,
         { collider: true }
       );
@@ -934,12 +793,9 @@ export default class CoastalCityMap {
     }
   }
 
-  // --------------------------------------------------
-  // ATMOSPHERE
-  // --------------------------------------------------
+  // DISTANT CITY SKYLINE
 
-  createAtmosphere() {
-    // Distant skyline silhouettes.
+  createDistantBuildings() {
     for (const side of [-1, 1]) {
       for (let i = 0; i < 12; i++) {
         const x = side * (205 + (i % 3) * 22);
@@ -947,19 +803,15 @@ export default class CoastalCityMap {
         const height = 55 + (i * 13) % 70;
 
         this.addBox(
-          x,
-          height / 2,
-          z,
+          x, height / 2, z,
           28, height, 32,
-          this.m.building[i % this.m.building.length]
+          this.m.buildings[i % this.m.buildings.length]
         );
       }
     }
   }
 
-  // --------------------------------------------------
   // STAGE API
-  // --------------------------------------------------
 
   setStage(stage) {
     this.stage = Math.max(1, Math.min(3, stage));
@@ -969,18 +821,13 @@ export default class CoastalCityMap {
     }
   }
 
-  // --------------------------------------------------
   // CLEANUP
-  // --------------------------------------------------
 
   dispose() {
     this.scene.remove(this.group);
     this.scene.remove(this.sun);
-    this.scene.remove(this.sun.target);
-
-    for (const geometry of this.geometryCache.values()) {
-      geometry.dispose();
-    }
+    this.scene.remove(this.sun?.target);
+    this.scene.remove(this.hemisphere);
 
     this.group.traverse(object => {
       if (object.isInstancedMesh) {
@@ -988,6 +835,11 @@ export default class CoastalCityMap {
       }
     });
 
+    for (const geometry of this.geometryCache.values()) {
+      geometry.dispose();
+    }
+
+    this.geometryCache.clear();
     this.colliders.length = 0;
   }
 }
