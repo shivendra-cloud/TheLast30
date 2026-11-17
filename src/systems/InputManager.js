@@ -51,4 +51,9 @@ export class InputManager {
     this.mouseDY = 0;
     return { dx, dy };
   }
+
+  // Helper to check if aiming (holding C or Right Mouse)
+  isAiming() {
+    return this.rightMouse || this.keys['KeyC'];
+  }
 }

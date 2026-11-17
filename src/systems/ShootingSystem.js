@@ -20,6 +20,9 @@ export class ShootingSystem {
     this.ammo -= 1;
     this.hud.updateAmmo(this.ammo);
 
+    // Alert all NPCs to the gunshot
+    this.npcManager.alertGunshot();
+
     this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
 
     const aliveNpcs = this.npcManager.getAliveNpcs();
@@ -51,6 +54,7 @@ export class ShootingSystem {
 
   resolveKill(npc) {
     npc.kill();
+    this.hud.triggerHitMarker();
 
     if (npc.isInfected) {
       this.ammo = Math.min(this.maxAmmo, this.ammo + 6);

@@ -5,12 +5,13 @@ export class Weapon {
     this.scene = scene;
     this.player = player;
     this.cooldown = 0;
-    this.fireRate = 0.28;
+    this.fireRate = 0.25;
 
     this.group = new THREE.Group();
-    const metalMat = new THREE.MeshLambertMaterial({ color: 0x1c1f24 });
+    const metalMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
     const gripMat = new THREE.MeshLambertMaterial({ color: 0x2a2018 });
 
+    // Gun Model
     const slide = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.42), metalMat);
     slide.position.set(0, 0, -0.22);
     this.group.add(slide);
@@ -23,9 +24,12 @@ export class Weapon {
     this.muzzle.position.set(0, 0.02, -0.44);
     this.group.add(this.muzzle);
 
-    this.group.position.set(0.35, 0.35, 0.15);
-    player.group.add(this.group);
+    // Attach to the Right Arm!
+    // The arm is at x:0.38, y:0.15. We put the gun at the bottom of the arm.
+    this.group.position.set(0, -0.35, 0.1); 
+    player.rightArm.add(this.group);
 
+    // Muzzle flash
     this.flash = new THREE.Mesh(
       new THREE.SphereGeometry(0.12, 6, 6),
       new THREE.MeshBasicMaterial({ color: 0xffe08a })
@@ -33,6 +37,7 @@ export class Weapon {
     this.flash.visible = false;
     this.scene.add(this.flash);
 
+    // Tracers
     this.tracers = [];
     for (let i = 0; i < 6; i++) {
       const geo = new THREE.BufferGeometry().setFromPoints([
@@ -46,7 +51,7 @@ export class Weapon {
     }
   }
 
-  update(dt) {
+  update(dt, isAiming) {
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this.flash.visible) {
       this.flashLife -= dt;
@@ -69,13 +74,16 @@ export class Weapon {
     const origin = new THREE.Vector3();
     this.muzzle.getWorldPosition(origin);
 
+    // Visual Recoil (Kick the gun back)
+    this.group.position.z += 0.08;
+    setTimeout(() => { this.group.position.z -= 0.08; }, 50);
+
+    // Muzzle Flash
     this.flash.position.copy(origin);
     this.flash.visible = true;
     this.flashLife = 0.05;
 
-    this.group.position.z = -0.05;
-    setTimeout(() => { this.group.position.z = 0.15; }, 60);
-
+    // Tracer
     const t = this.tracers.find(x => x.life <= 0) || this.tracers[0];
     const positions = t.line.geometry.attributes.position;
     positions.setXYZ(0, origin.x, origin.y, origin.z);

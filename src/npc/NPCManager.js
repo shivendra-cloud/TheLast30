@@ -14,6 +14,7 @@ export class NPCManager {
       new THREE.Vector3(-2, 1, 30),
     ];
 
+    // 2 infected, 3 innocent (Index 1 and 3 are infected)
     const infectedIndices = new Set([1, 3]);
 
     spawnPoints.forEach((p, i) => {
@@ -24,6 +25,12 @@ export class NPCManager {
   update(dt, playerPos, colliders) {
     for (const npc of this.npcs) {
       npc.update(dt, playerPos, this.npcs, colliders);
+    }
+  }
+
+  alertGunshot() {
+    for (const npc of this.npcs) {
+      npc.reactToGunshot();
     }
   }
 

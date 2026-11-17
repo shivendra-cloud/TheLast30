@@ -8,38 +8,72 @@ export class Player {
     this.onGround = true;
     this.radius = 0.45;
     this.height = 1.0;
-    this.speed = 6.5;
-    this.jumpPower = 6.5;
-    this.gravity = -22;
+    
+    // Snappy speeds
+    this.speed = 9.0; 
+    this.aimSpeed = 4.5; 
+    this.jumpPower = 7.5;
+    this.gravity = -25;
 
     this.group = new THREE.Group();
 
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x384a6a });
-    const headMat = new THREE.MeshLambertMaterial({ color: 0xc8a888 });
+    // Character Model
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x222833 });
+    const headMat = new THREE.MeshLambertMaterial({ color: 0xd1b8a5 });
+    const vestMat = new THREE.MeshLambertMaterial({ color: 0x3a4a2a });
 
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.75, 0.32), bodyMat);
-    torso.position.y = 0.05;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 0.32), headMat);
+    head.position.y = 0.75;
+    head.castShadow = true;
+    this.group.add(head);
+    
+    const hair = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), new THREE.MeshLambertMaterial({ color: 0x111111 }));
+    hair.position.set(0, 0.9, -0.02);
+    this.group.add(hair);
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.85, 0.4), bodyMat);
+    torso.position.y = 0.15;
     torso.castShadow = true;
     this.group.add(torso);
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.32), headMat);
-    head.position.y = 0.62;
-    head.castShadow = true;
-    this.group.add(head);
+    const vest = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.65, 0.45), vestMat);
+    vest.position.y = 0.2;
+    this.group.add(vest);
 
-    const legMat = new THREE.MeshLambertMaterial({ color: 0x22283a });
-    for (const dx of [-0.15, 0.15]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.65, 0.22), legMat);
-      leg.position.set(dx, -0.5, 0);
-      leg.castShadow = true;
-      this.group.add(leg);
-    }
+    this.leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.65, 0.18), bodyMat);
+    this.leftArm.position.set(-0.42, 0.15, 0);
+    this.leftArm.castShadow = true;
+    this.group.add(this.leftArm);
+
+    this.rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.65, 0.18), bodyMat);
+    this.rightArm.position.set(0.42, 0.15, 0);
+    this.rightArm.castShadow = true;
+    this.group.add(this.rightArm);
+
+    const legMat = new THREE.MeshLambertMaterial({ color: 0x15181d });
+    this.leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.26), legMat);
+    this.leftLeg.position.set(-0.18, -0.5, 0);
+    this.leftLeg.castShadow = true;
+    this.group.add(this.leftLeg);
+
+    this.rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.26), legMat);
+    this.rightLeg.position.set(0.18, -0.5, 0);
+    this.rightLeg.castShadow = true;
+    this.group.add(this.rightLeg);
 
     this.group.position.copy(this.position);
     scene.add(this.group);
   }
 
   update(dt, input, cameraYaw, colliders) {
+    const isAiming = input.isAiming();
+    const currentSpeed = isAiming ? this.aimSpeed : this.speed;
+
+    // Animate Arms
+    const targetArmX = isAiming ? -Math.PI / 2 : 0;
+    this.leftArm.rotation.x += (targetArmX - this.leftArm.rotation.x) * Math.min(1, dt * 20);
+    this.rightArm.rotation.x += (targetArmX - this.rightArm.rotation.x) * Math.min(1, dt * 20);
+
     const forward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
     const right = new THREE.Vector3(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
 
@@ -50,14 +84,26 @@ export class Player {
     if (input.keys['KeyA']) move.sub(right);
 
     if (move.lengthSq() > 0) {
-      move.normalize().multiplyScalar(this.speed * dt);
+      move.normalize().multiplyScalar(currentSpeed * dt);
       this.tryMove(move.x, 0, colliders);
       this.tryMove(0, move.z, colliders);
-      const targetYaw = Math.atan2(move.x, move.z);
+      
+      if (!isAiming) {
+        const targetYaw = Math.atan2(move.x, move.z);
+        let dy = targetYaw - this.group.rotation.y;
+        while (dy > Math.PI) dy -= Math.PI * 2;
+        while (dy < -Math.PI) dy += Math.PI * 2;
+        // Fast turn speed for snappy movement
+        this.group.rotation.y += dy * Math.min(1, dt * 18); 
+      }
+    }
+
+    if (isAiming) {
+      const targetYaw = cameraYaw + Math.PI; 
       let dy = targetYaw - this.group.rotation.y;
       while (dy > Math.PI) dy -= Math.PI * 2;
       while (dy < -Math.PI) dy += Math.PI * 2;
-      this.group.rotation.y += dy * Math.min(1, dt * 12);
+      this.group.rotation.y += dy * Math.min(1, dt * 25); // Instant snap while aiming
     }
 
     if (input.keys['Space'] && this.onGround) {
@@ -95,9 +141,5 @@ export class Player {
       if (ddx * ddx + ddz * ddz < r * r) return true;
     }
     return false;
-  }
-
-  getAimOrigin() {
-    return new THREE.Vector3(this.position.x, this.position.y + 0.55, this.position.z);
   }
 }

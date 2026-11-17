@@ -1,0 +1,1080 @@
+import * as THREE from 'three';
+
+/*
+  THE LAST 30
+  Procedural American Coastal City
+  Three.js / JavaScript ES6
+
+  Ocean: West (-X)
+  City: East (+X)
+  Main Boulevard: parallel to the beach
+  Streets: connected grid
+*/
+
+export default class CoastalCityMap {
+  constructor(scene, options = {}) {
+    if (!scene) throw new Error("CoastalCityMap requires a THREE.Scene");
+
+    this.scene = scene;
+    this.options = options;
+    this.group = new THREE.Group();
+    this.group.name = "THE_LAST_30_COASTAL_CITY";
+
+    this.colliders = [];
+    this.stage = 1;
+    this.stageGroups = [];
+
+    this.createMaterials();
+    this.createGeometries();
+
+    this.scene.add(this.group);
+
+    this.createTerrain();
+    this.createOcean();
+    this.createBeach();
+    this.createPromenade();
+    this.createRoadNetwork();
+    this.createRoadMarkings();
+    this.createCommercialDistrict();
+    this.createResidentialDistrict();
+    this.createMedicalDistrict();
+    this.createPoliceDistrict();
+    this.createParkingAreas();
+    this.createPalmTrees();
+    this.createStreetFurniture();
+    this.createStreetLights();
+    this.createTrafficSignals();
+    this.createVehicles();
+    this.createStageObjects();
+
+    console.log("THE LAST 30: Coastal city generated.");
+    console.log("Collision objects:", this.colliders.length);
+  }
+
+  // --------------------------------------------------
+  // MATERIALS
+  // --------------------------------------------------
+
+  createMaterials() {
+    const mat = (color, roughness = 0.9) =>
+      new THREE.MeshStandardMaterial({
+        color,
+        roughness,
+        metalness: 0
+      });
+
+    this.m = {
+      grass: mat(0x71835a),
+      grassDark: mat(0x536b45),
+      sand: mat(0xd9c49a),
+      ocean: mat(0x397f9b, 0.65),
+      road: mat(0x45494b),
+      sidewalk: mat(0xb8b5ad),
+      concrete: mat(0x999a95),
+      yellow: mat(0xe2bd39),
+      white: mat(0xe7e6df),
+      building1: mat(0xd4c5ae),
+      building2: mat(0xc0c2bc),
+      building3: mat(0xd6d0c2),
+      building4: mat(0x9faaa9),
+      brick: mat(0xa66e55),
+      roof: mat(0x555452),
+      roofLight: mat(0x77716a),
+      glass: new THREE.MeshStandardMaterial({
+        color: 0x77949b,
+        roughness: 0.25,
+        metalness: 0.15
+      }),
+      windowDark: mat(0x263b42, 0.35),
+      door: mat(0x594b3d),
+      wood: mat(0x856c50),
+      metal: mat(0x626b70, 0.55),
+      black: mat(0x242729),
+      whitePaint: mat(0xe8e5d9),
+      red: mat(0xa63f35),
+      blue: mat(0x456b89),
+      green: mat(0x526c50),
+      palm: mat(0x75543b),
+      leaves: mat(0x386b40),
+      leavesLight: mat(0x5d8046),
+      sign: mat(0xf0e9d8),
+      yellowSign: mat(0xe3c54e),
+      sidewalkLine: mat(0x8d8d87),
+      waterLine: mat(0x78aab6)
+    };
+  }
+
+  createGeometries() {
+    this.boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    this.cylinderGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
+    this.palmGeo = new THREE.CylinderGeometry(0.25, 0.5, 1, 7);
+    this.sphereGeo = new THREE.SphereGeometry(1, 8, 6);
+    this.coneGeo = new THREE.ConeGeometry(1, 1, 7);
+    this.planeGeo = new THREE.PlaneGeometry(1, 1);
+  }
+
+  // --------------------------------------------------
+  // GENERAL HELPERS
+  // --------------------------------------------------
+
+  addBox(parent, x, y, z, sx, sy, sz, material, rotationY = 0) {
+    const mesh = new THREE.Mesh(this.boxGeo, material);
+    mesh.position.set(x, y, z);
+    mesh.scale.set(sx, sy, sz);
+    mesh.rotation.y = rotationY;
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  addCylinder(parent, x, y, z, radiusTop, radiusBottom, height, material) {
+    const geo = new THREE.CylinderGeometry(
+      radiusTop,
+      radiusBottom,
+      height,
+      8
+    );
+
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.position.set(x, y, z);
+    parent.add(mesh);
+    return mesh;
+  }
+
+  addPlane(parent, x, y, z, width, depth, material) {
+    const mesh = new THREE.Mesh(this.planeGeo, material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, y, z);
+    mesh.scale.set(width, depth, 1);
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  addCollider(x, z, width, depth, height = 8) {
+    this.colliders.push({
+      minX: x - width / 2,
+      maxX: x + width / 2,
+      minZ: z - depth / 2,
+      maxZ: z + depth / 2,
+      height
+    });
+  }
+
+  addRoad(x, z, width, depth) {
+    this.addPlane(this.group, x, 0.025, z, width, depth, this.m.road);
+  }
+
+  // --------------------------------------------------
+  // TERRAIN AND OCEAN
+  // --------------------------------------------------
+
+  createTerrain() {
+    this.addPlane(
+      this.group, 0, -0.12, 0,
+      540, 500, this.m.grass
+    );
+  }
+
+  createOcean() {
+    this.addPlane(
+      this.group, -235, -0.08, 0,
+      180, 520, this.m.ocean
+    );
+
+    // Subtle water strips
+    for (let i = 0; i < 12; i++) {
+      this.addPlane(
+        this.group,
+        -175 - i * 7,
+        -0.055,
+        -190 + i * 33,
+        24,
+        0.45,
+        this.m.waterLine
+      );
+    }
+  }
+
+  createBeach() {
+    this.addPlane(
+      this.group, -130, -0.045, 0,
+      30, 490, this.m.sand
+    );
+
+    // Beach boundaries
+    for (let z = -225; z <= 225; z += 30) {
+      this.addBox(
+        this.group, -115, 0.08, z,
+        0.35, 0.15, 0.35, this.m.wood
+      );
+    }
+
+    // Beach access paths
+    for (let z = -180; z <= 180; z += 90) {
+      this.addPlane(
+        this.group, -104, 0.005, z,
+        7, 18, this.m.concrete
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // PROMENADE
+  // --------------------------------------------------
+
+  createPromenade() {
+    this.addPlane(
+      this.group, -91, 0.04, 0,
+      17, 480, this.m.sidewalk
+    );
+
+    for (let z = -220; z <= 220; z += 20) {
+      this.addBox(
+        this.group, -82.5, 0.13, z,
+        0.25, 0.16, 0.2, this.m.concrete
+      );
+    }
+
+    // Promenade benches
+    for (let z = -180; z <= 180; z += 60) {
+      this.createBench(-95, z);
+    }
+  }
+
+  createBench(x, z) {
+    const g = new THREE.Group();
+
+    this.addBox(g, 0, 0.8, 0, 3.2, 0.18, 0.55, this.m.wood);
+    this.addBox(g, 0, 1.25, -0.2, 3.2, 0.8, 0.16, this.m.wood);
+
+    for (const dx of [-1.2, 1.2]) {
+      this.addBox(g, dx, 0.42, 0, 0.15, 0.8, 0.15, this.m.metal);
+    }
+
+    g.position.set(x, 0, z);
+    this.group.add(g);
+  }
+
+  // --------------------------------------------------
+  // ROAD NETWORK
+  // --------------------------------------------------
+
+  createRoadNetwork() {
+    // Main beachfront boulevard
+    this.addRoad(-54, 0, 29, 480);
+
+    // Parallel downtown road
+    this.addRoad(75, 0, 18, 450);
+
+    // Residential road
+    this.addRoad(170, 0, 15, 400);
+
+    // Cross streets
+    for (const z of [-175, -105, -35, 35, 105, 175]) {
+      this.addRoad(65, z, 330, 15);
+    }
+
+    // Sidewalks beside main boulevard
+    this.addPlane(
+      this.group, -75, 0.045, 0,
+      9, 480, this.m.sidewalk
+    );
+
+    this.addPlane(
+      this.group, -33, 0.045, 0,
+      9, 480, this.m.sidewalk
+    );
+
+    // Downtown sidewalks
+    this.addPlane(
+      this.group, 61, 0.045, 0,
+      5, 450, this.m.sidewalk
+    );
+
+    this.addPlane(
+      this.group, 89, 0.045, 0,
+      5, 450, this.m.sidewalk
+    );
+
+    // Residential sidewalks
+    this.addPlane(
+      this.group, 159, 0.045, 0,
+      4, 400, this.m.sidewalk
+    );
+
+    this.addPlane(
+      this.group, 181, 0.045, 0,
+      4, 400, this.m.sidewalk
+    );
+  }
+
+  createRoadMarkings() {
+    // Boulevard double yellow centre lines
+    for (let z = -230; z <= 230; z += 12) {
+      this.addBox(
+        this.group, -54, 0.06, z,
+        0.16, 0.015, 5.5, this.m.yellow
+      );
+
+      this.addBox(
+        this.group, -53.5, 0.06, z,
+        0.16, 0.015, 5.5, this.m.yellow
+      );
+    }
+
+    // White lane dividers
+    for (let z = -230; z <= 230; z += 16) {
+      this.addBox(
+        this.group, -62, 0.06, z,
+        0.12, 0.015, 6, this.m.white
+      );
+
+      this.addBox(
+        this.group, -46, 0.06, z,
+        0.12, 0.015, 6, this.m.white
+      );
+    }
+
+    // Pedestrian crossings
+    for (const z of [-175, -105, -35, 35, 105, 175]) {
+      for (let x = -68; x <= -40; x += 3) {
+        this.addBox(
+          this.group, x, 0.065, z,
+          1.6, 0.02, 0.8, this.m.white
+        );
+      }
+    }
+
+    // Stop lines
+    for (const z of [-175, -105, -35, 35, 105, 175]) {
+      this.addBox(
+        this.group, -54, 0.065, z - 9,
+        25, 0.02, 0.3, this.m.white
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // BUILDINGS
+  // --------------------------------------------------
+
+  createBuilding(x, z, width, depth, height, material, type = "shop") {
+    const g = new THREE.Group();
+
+    this.addBox(
+      g, 0, height / 2, 0,
+      width, height, depth, material
+    );
+
+    // Flat roof
+    this.addBox(
+      g, 0, height + 0.25, 0,
+      width + 0.6, 0.5, depth + 0.6,
+      this.m.roof
+    );
+
+    // Front facade faces -X, toward beachfront boulevard
+    const frontX = -width / 2 - 0.06;
+
+    if (type === "shop" || type === "diner" || type === "gas") {
+      this.addBox(
+        g, frontX, height * 0.48, 0,
+        0.12, height * 0.4, depth * 0.55,
+        this.m.glass
+      );
+
+      this.addBox(
+        g, frontX - 0.04, height * 0.85, 0,
+        0.18, 0.5, depth * 0.9,
+        this.m.sign
+      );
+
+      this.addBox(
+        g, frontX - 0.1, 0.13, 0,
+        0.12, 0.26, 1.8,
+        this.m.door
+      );
+    } else {
+      // Residential windows
+      const floors = Math.max(1, Math.floor(height / 4));
+
+      for (let floor = 0; floor < floors; floor++) {
+        const y = 2 + floor * 3.2;
+
+        for (const dz of [-depth * 0.25, depth * 0.25]) {
+          this.addBox(
+            g, frontX, y, dz,
+            0.12, 1.35, 1.4,
+            this.m.windowDark
+          );
+        }
+      }
+
+      this.addBox(
+        g, frontX, 1.1, 0,
+        0.15, 2.2, 1.2,
+        this.m.door
+      );
+    }
+
+    // Side windows
+    for (const sideZ of [-depth / 2 - 0.06, depth / 2 + 0.06]) {
+      this.addBox(
+        g, 0, height * 0.55, sideZ,
+        width * 0.4, 1.4, 0.12,
+        this.m.windowDark
+      );
+    }
+
+    g.position.set(x, 0, z);
+    this.group.add(g);
+
+    this.addCollider(x, z, width, depth, height + 1);
+
+    return g;
+  }
+
+  createCommercialDistrict() {
+    const buildings = [
+      [10, -185, 22, 18, 9, "shop"],
+      [10, -145, 24, 19, 11, "diner"],
+      [12, -65, 25, 20, 10, "shop"],
+      [12, 15, 23, 20, 10, "shop"],
+      [12, 85, 25, 20, 12, "diner"],
+      [12, 155, 25, 20, 10, "shop"],
+
+      [110, -180, 28, 23, 13, "shop"],
+      [110, -120, 25, 23, 10, "shop"],
+      [110, -55, 30, 24, 12, "diner"],
+      [110, 15, 26, 22, 11, "shop"],
+      [110, 85, 27, 22, 12, "shop"],
+      [110, 160, 28, 24, 13, "shop"]
+    ];
+
+    for (let i = 0; i < buildings.length; i++) {
+      const [x, z, w, d, h, type] = buildings[i];
+      const colors = [
+        this.m.building1,
+        this.m.building2,
+        this.m.building3,
+        this.m.brick,
+        this.m.building4
+      ];
+
+      this.createBuilding(
+        x, z, w, d, h, colors[i % colors.length], type
+      );
+    }
+
+    // Motel
+    this.createBuilding(
+      205, -120, 38, 40, 15,
+      this.m.building4, "residential"
+    );
+
+    // Gas station
+    this.createGasStation(35, 145);
+  }
+
+  createGasStation(x, z) {
+    const g = new THREE.Group();
+
+    this.addBox(g, 0, 0.1, 0, 32, 0.2, 28, this.m.concrete);
+
+    // Roof canopy
+    this.addBox(g, 0, 5, 0, 27, 0.6, 22, this.m.red);
+
+    // Canopy columns
+    for (const dx of [-11, 11]) {
+      for (const dz of [-8, 8]) {
+        this.addBox(
+          g, dx, 2.5, dz,
+          0.65, 5, 0.65, this.m.whitePaint
+        );
+      }
+    }
+
+    // Fuel pumps
+    for (const dx of [-6, 0, 6]) {
+      this.addBox(
+        g, dx, 1.1, 0,
+        1.3, 2.2, 1.1, this.m.whitePaint
+      );
+
+      this.addBox(
+        g, dx, 1.9, -0.6,
+        0.8, 0.45, 0.08, this.m.black
+      );
+    }
+
+    g.position.set(x, 0, z);
+    this.group.add(g);
+  }
+
+  // --------------------------------------------------
+  // RESIDENTIAL DISTRICT
+  // --------------------------------------------------
+
+  createResidentialDistrict() {
+    const rows = [-165, -95, -25, 45, 115, 185];
+
+    rows.forEach((z, index) => {
+      const x = 205;
+
+      this.createHouse(x, z, index);
+      this.createHouse(x + 32, z + 24, index + 1);
+    });
+
+    // Small apartment blocks
+    this.createBuilding(
+      150, -205, 27, 32, 20,
+      this.m.building2, "residential"
+    );
+
+    this.createBuilding(
+      150, 205, 27, 32, 20,
+      this.m.building3, "residential"
+    );
+  }
+
+  createHouse(x, z, seed) {
+    const g = new THREE.Group();
+
+    const width = 15 + (seed % 3) * 2;
+    const depth = 14;
+    const height = 6.5;
+
+    const wallMaterials = [
+      this.m.building1,
+      this.m.whitePaint,
+      this.m.brick,
+      this.m.building4
+    ];
+
+    const wall = wallMaterials[seed % wallMaterials.length];
+
+    this.addBox(
+      g, 0, height / 2, 0,
+      width, height, depth, wall
+    );
+
+    // Roof
+    this.addBox(
+      g, 0, height + 0.35, 0,
+      width + 1, 0.7, depth + 1,
+      this.m.roof
+    );
+
+    // Front windows
+    for (const dx of [-4, 4]) {
+      this.addBox(
+        g, dx, 3.6, -depth / 2 - 0.07,
+        2, 1.6, 0.12, this.m.windowDark
+      );
+    }
+
+    // Door
+    this.addBox(
+      g, 0, 1.2, -depth / 2 - 0.08,
+      1.6, 2.4, 0.15, this.m.door
+    );
+
+    // Garage
+    this.addBox(
+      g, 0, 1.5, depth / 2 + 0.08,
+      6, 3, 0.2, this.m.concrete
+    );
+
+    g.position.set(x, 0, z);
+    this.group.add(g);
+
+    this.addCollider(x, z, width, depth, height + 2);
+
+    // Small garden
+    this.addPlane(
+      this.group, x, 0.015, z - 13,
+      19, 8, this.m.grassDark
+    );
+
+    // Driveway
+    this.addPlane(
+      this.group, x, 0.025, z + 13,
+      9, 10, this.m.concrete
+    );
+  }
+
+  // --------------------------------------------------
+  // MEDICAL DISTRICT
+  // --------------------------------------------------
+
+  createMedicalDistrict() {
+    const x = 220;
+    const z = 0;
+
+    const hospital = this.createBuilding(
+      x, z, 34, 48, 21,
+      this.m.whitePaint, "residential"
+    );
+
+    // Hospital sign
+    this.addBox(
+      hospital,
+      -17.2, 18, 0,
+      0.25, 2.2, 6,
+      this.m.red
+    );
+
+    this.addBox(
+      hospital,
+      -17.4, 18, 0,
+      0.3, 0.5, 1,
+      this.m.whitePaint
+    );
+
+    // Ambulance parking area
+    this.addPlane(
+      this.group, 220, 0.035, 42,
+      42, 22, this.m.concrete
+    );
+
+    this.addBox(
+      this.group, 199, 0.07, 42,
+      0.25, 0.03, 22, this.m.white
+    );
+
+    this.addBox(
+      this.group, 241, 0.07, 42,
+      0.25, 0.03, 22, this.m.white
+    );
+  }
+
+  // --------------------------------------------------
+  // POLICE DISTRICT
+  // --------------------------------------------------
+
+  createPoliceDistrict() {
+    const x = 220;
+    const z = 115;
+
+    this.createBuilding(
+      x, z, 36, 35, 12,
+      this.m.building2, "shop"
+    );
+
+    // Police parking
+    this.addPlane(
+      this.group, 220, 0.035, 145,
+      45, 22, this.m.concrete
+    );
+
+    // Parking dividers
+    for (let dx = 200; dx <= 240; dx += 8) {
+      this.addBox(
+        this.group, dx, 0.065, 145,
+        0.16, 0.02, 18, this.m.white
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // PARKING AREAS
+  // --------------------------------------------------
+
+  createParkingAreas() {
+    const locations = [
+      [32, -185],
+      [40, -65],
+      [40, 65],
+      [130, 0],
+      [130, 190]
+    ];
+
+    locations.forEach(([x, z]) => {
+      this.addPlane(
+        this.group, x, 0.03, z,
+        36, 26, this.m.concrete
+      );
+
+      for (let dx = -14; dx <= 14; dx += 7) {
+        this.addBox(
+          this.group, x + dx, 0.06, z,
+          0.13, 0.02, 20, this.m.white
+        );
+      }
+    });
+  }
+
+  // --------------------------------------------------
+  // PALM TREES
+  // --------------------------------------------------
+
+  createPalmTrees() {
+    const locations = [];
+
+    // Beach promenade
+    for (let z = -210; z <= 210; z += 25) {
+      locations.push([-86, z]);
+    }
+
+    // Main street
+    for (let z = -205; z <= 205; z += 45) {
+      locations.push([-78, z + 12]);
+    }
+
+    // Commercial area
+    for (let z = -180; z <= 180; z += 65) {
+      locations.push([25, z + 12]);
+    }
+
+    locations.forEach(([x, z], i) => {
+      this.createPalmTree(x, z, 7 + (i % 3));
+    });
+  }
+
+  createPalmTree(x, z, height) {
+    const g = new THREE.Group();
+
+    const trunk = new THREE.Mesh(
+      this.palmGeo,
+      this.m.palm
+    );
+
+    trunk.position.y = height / 2;
+    trunk.scale.set(0.55, height, 0.55);
+    g.add(trunk);
+
+    // Palm leaves
+    for (let i = 0; i < 7; i++) {
+      const angle = (i / 7) * Math.PI * 2;
+
+      const leaf = new THREE.Mesh(
+        this.coneGeo,
+        i % 2 ? this.m.leaves : this.m.leavesLight
+      );
+
+      leaf.position.set(
+        Math.cos(angle) * 2.2,
+        height - 0.3,
+        Math.sin(angle) * 2.2
+      );
+
+      leaf.rotation.z = Math.cos(angle) * 0.8;
+      leaf.rotation.x = Math.sin(angle) * 0.8;
+      leaf.scale.set(0.45, 4.5, 0.45);
+
+      g.add(leaf);
+    }
+
+    g.position.set(x, 0, z);
+    this.group.add(g);
+  }
+
+  // --------------------------------------------------
+  // STREET FURNITURE
+  // --------------------------------------------------
+
+  createStreetFurniture() {
+    // Trash cans
+    for (let z = -180; z <= 180; z += 60) {
+      this.addCylinder(
+        this.group, -84, 0.7, z,
+        0.65, 0.65, 1.4, this.m.metal
+      );
+    }
+
+    // Utility boxes
+    for (let z = -150; z <= 150; z += 100) {
+      this.addBox(
+        this.group, -27, 1.2, z,
+        1.4, 2.4, 1.2, this.m.green
+      );
+    }
+
+    // Street signs
+    for (let z = -175; z <= 175; z += 70) {
+      this.createStreetSign(-70, z);
+    }
+  }
+
+  createStreetSign(x, z) {
+    this.addCylinder(
+      this.group, x, 2.3, z,
+      0.12, 0.12, 4.6, this.m.metal
+    );
+
+    this.addBox(
+      this.group, x, 4, z,
+      0.25, 0.8, 3.2, this.m.green
+    );
+  }
+
+  // --------------------------------------------------
+  // STREET LIGHTS
+  // --------------------------------------------------
+
+  createStreetLights() {
+    for (let z = -210; z <= 210; z += 35) {
+      this.createStreetLight(-76, z);
+      this.createStreetLight(-31, z + 15);
+    }
+  }
+
+  createStreetLight(x, z) {
+    const g = new THREE.Group();
+
+    this.addCylinder(
+      g, 0, 4, 0,
+      0.13, 0.19, 8, this.m.metal
+    );
+
+    this.addBox(
+      g, 0.8, 7.9, 0,
+      1.8, 0.14, 0.18, this.m.metal
+    );
+
+    const lampMat = new THREE.MeshStandardMaterial({
+      color: 0xffe5ad,
+      emissive: 0x000000,
+      roughness: 0.5
+    });
+
+    this.addBox(
+      g, 1.55, 7.8, 0,
+      0.55, 0.2, 0.6, lampMat
+    );
+
+    g.position.set(x, 0, z);
+    this.group.add(g);
+  }
+
+  // --------------------------------------------------
+  // TRAFFIC SIGNALS
+  // --------------------------------------------------
+
+  createTrafficSignals() {
+    for (const z of [-175, -105, -35, 35, 105, 175]) {
+      this.createTrafficSignal(-39, z - 12);
+    }
+  }
+
+  createTrafficSignal(x, z) {
+    const g = new THREE.Group();
+
+    this.addCylinder(
+      g, 0, 3.4, 0,
+      0.15, 0.15, 6.8, this.m.metal
+    );
+
+    this.addBox(
+      g, 0, 6.2, 0,
+      0.85, 2.2, 0.8, this.m.black
+    );
+
+    this.addCylinder(
+      g, 0, 6.8, 0.45,
+      0.22, 0.22, 0.15, this.m.red
+    );
+
+    this.addCylinder(
+      g, 0, 6.2, 0.45,
+      0.22, 0.22, 0.15, this.m.yellow
+    );
+
+    this.addCylinder(
+      g, 0, 5.6, 0.45,
+      0.22, 0.22, 0.15, this.m.green
+    );
+
+    g.position.set(x, 0, z);
+    this.group.add(g);
+  }
+
+  // --------------------------------------------------
+  // PARKED VEHICLES
+  // --------------------------------------------------
+
+  createVehicles() {
+    const positions = [
+      [-72, -190], [-72, -120], [-72, -50],
+      [-36, 75], [-36, 150],
+      [40, -145], [40, -15], [40, 110],
+      [130, -100], [130, 65], [195, 175]
+    ];
+
+    const colors = [
+      0x9c9d9b,
+      0x343d49,
+      0x8d4038,
+      0xb9b5a8,
+      0x526b7a,
+      0xc8c4b5
+    ];
+
+    positions.forEach(([x, z], i) => {
+      this.createCar(
+        x, z,
+        colors[i % colors.length],
+        i % 3 === 0
+      );
+    });
+  }
+
+  createCar(x, z, color, rotated = false) {
+    const g = new THREE.Group();
+
+    const carMat = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.65,
+      metalness: 0.12
+    });
+
+    // Main body
+    this.addBox(
+      g, 0, 0.8, 0,
+      2.3, 0.8, 4.6, carMat
+    );
+
+    // Roof
+    this.addBox(
+      g, 0, 1.55, 0.1,
+      1.9, 0.75, 2.3, carMat
+    );
+
+    // Windows
+    this.addBox(
+      g, 0, 1.58, -1.05,
+      1.75, 0.52, 0.08, this.m.glass
+    );
+
+    this.addBox(
+      g, 0, 1.58, 1.2,
+      1.75, 0.52, 0.08, this.m.glass
+    );
+
+    // Wheels
+    for (const wx of [-1.12, 1.12]) {
+      for (const wz of [-1.4, 1.4]) {
+        const wheel = new THREE.Mesh(
+          this.cylinderGeo,
+          this.m.black
+        );
+
+        wheel.position.set(wx, 0.45, wz);
+        wheel.scale.set(0.42, 0.3, 0.42);
+        wheel.rotation.z = Math.PI / 2;
+        g.add(wheel);
+      }
+    }
+
+    // Headlights
+    for (const dx of [-0.75, 0.75]) {
+      this.addBox(
+        g, dx, 0.9, -2.32,
+        0.45, 0.25, 0.08, this.m.whitePaint
+      );
+    }
+
+    g.position.set(x, 0, z);
+    if (rotated) g.rotation.y = Math.PI / 2;
+
+    this.group.add(g);
+    this.addCollider(
+      x, z,
+      rotated ? 4.6 : 2.3,
+      rotated ? 2.3 : 4.6,
+      2.5
+    );
+  }
+
+  // --------------------------------------------------
+  // INFECTION STAGE OBJECTS
+  // --------------------------------------------------
+
+  createStageObjects() {
+    // Each group can be activated as the outbreak progresses.
+    for (let i = 0; i < 4; i++) {
+      const g = new THREE.Group();
+      g.name = `CITY_STAGE_${i + 1}`;
+      this.group.add(g);
+      this.stageGroups.push(g);
+    }
+
+    // Stage 1: normal city - no additional objects.
+
+    // Stage 2: a few shop shutters and warning boards.
+    const stage2 = this.stageGroups[1];
+
+    for (let z = -150; z <= 150; z += 100) {
+      this.addBox(
+        stage2, 17, 1.6, z,
+        0.18, 3.2, 5, this.m.metal
+      );
+    }
+
+    // Stage 3: road barricades and emergency debris.
+    const stage3 = this.stageGroups[2];
+
+    for (const z of [-110, 35, 150]) {
+      this.addBox(
+        stage3, -43, 0.9, z,
+        8, 1.8, 1.1, this.m.red
+      );
+
+      this.addBox(
+        stage3, -43, 1.05, z,
+        7, 0.2, 1.2, this.m.white
+      );
+    }
+
+    // Stage 4: additional roadblocks and damaged vehicles.
+    const stage4 = this.stageGroups[3];
+
+    for (const z of [-175, -35, 105]) {
+      this.addBox(
+        stage4, -54, 1.2, z,
+        14, 2.4, 1.5, this.m.black
+      );
+    }
+
+    this.setStage(1);
+  }
+
+  setStage(stage) {
+    const value = THREE.MathUtils.clamp(
+      Math.floor(stage), 1, 4
+    );
+
+    this.stage = value;
+
+    this.stageGroups.forEach((group, index) => {
+      group.visible = index === value - 1;
+    });
+  }
+
+  // --------------------------------------------------
+  // PUBLIC API
+  // --------------------------------------------------
+
+  getCollisionBoxes() {
+    return this.colliders;
+  }
+
+  getGroup() {
+    return this.group;
+  }
+
+  dispose() {
+    this.scene.remove(this.group);
+
+    this.group.traverse(object => {
+      if (object.isMesh) {
+        // Shared geometries/materials are retained
+        // because other meshes may use them.
+      }
+    });
+
+    this.colliders.length = 0;
+  }
+}
