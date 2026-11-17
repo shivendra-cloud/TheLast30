@@ -69,7 +69,13 @@ export class GameManager {
       this.npcManager.update(dt, this.player.position, this.map.colliders);
       this.infectionSystem.update(dt);
       this.cameraCtrl.update(dt, this.player, this.map.colliders);
-      this.weapon.update(dt, isAiming);
+      const isMoving =
+        this.input.keys['KeyW'] ||
+        this.input.keys['KeyA'] ||
+        this.input.keys['KeyS'] ||
+        this.input.keys['KeyD'];
+
+      this.weapon.update(dt, isAiming, isMoving);
       this.hud.updateInfection(this.infectionSystem.infectionPct);
       if (this.infectionSystem.lost) this.endGame(false);
     } else {
