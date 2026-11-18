@@ -1,258 +1,225 @@
 import * as THREE from 'three';
 
-/**
- * CoastalCityMap (arena rewrite) - low-poly urban/industrial arena.
- */
 export default class CoastalCityMap {
   constructor(scene) {
     this.scene = scene;
     this.colliders = [];
-    this.spawnPoint = new THREE.Vector3(0, 1, 10);
-    this.half = 40; 
+    this.spawnPoint = new THREE.Vector3(0, 1, 15);
+    this.half = 45; 
 
-    this._rects = [];     
-    this._geoCache = new Map();
     this._objects = [];   
-    this._seed = 1337;
-
+    this._geoCache = new Map();
+    
     this.build();
   }
 
-  _rand() {
-    let t = (this._seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  }
-
   build() {
-    this._makeMaterials();
-    this._makeLighting();
-    this._makeGround();
-    this._makeBoundary();
+    this._materials();
+    this._lighting();
+    this._ground();
+    this._boundary();
 
-    this._centralPlatform();
-    this._spawnPlaza();
-    this._westBuildings();
-    this._westAlleys();
-    this._containerYard();
-    this._northArea();
-    this._scaffoldTower();
-    this._southWalls();
-    this._scatterCrates(26);
+    // Main Level Design
+    this._centralTower();
+    this._leftBuilding();
+    this._rightBuilding();
+    this._containerMaze();
+    this._scatterCover();
   }
 
-  _makeMaterials() {
+  _materials() {
     const m = (c) => new THREE.MeshLambertMaterial({ color: c });
     this.mat = {
-      concrete: m(0xcfcbc0), concreteDark: m(0x8d8a84), brick: m(0xd98a5a),
-      blue: m(0x6fa3c7), teal: m(0x5fb3a1), steel: m(0x5a6068),
-      accent: m(0xf2c14e), wood: m(0xb58a55), woodDark: m(0x8f6a3f),
-      contRed: m(0xc0463a), contBlue: m(0x3b6ea8), contYellow: m(0xe0b43c),
-      contGreen: m(0x4c8f5a), fence: m(0x6b7078),
+      concrete: m(0x9ba1a6), // Light grey
+      concreteDark: m(0x4a4f54), // Dark grey
+      accentOrange: m(0xff7f50), // Orange
+      accentCyan: m(0x40e0d0), // Cyan
+      white: m(0xffffff),
+      wood: m(0x8b5a2b),
+      containerRed: m(0xd94c4c),
+      containerBlue: m(0x4c6ed9),
+      containerYellow: m(0xf4c542),
     };
-    this._crateMats = [this.mat.wood, this.mat.woodDark, this.mat.steel, this.mat.concreteDark];
-    this._contMats = [this.mat.contRed, this.mat.contBlue, this.mat.contYellow, this.mat.contGreen];
+    this._crateMats = [this.mat.wood, this.mat.accentOrange, this.mat.accentCyan];
   }
 
-  _makeLighting() {
-    this.scene.background = new THREE.Color(0x9fd3f5);
-    this.scene.fog = new THREE.Fog(0xbfe3f8, 70, 160);
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f98, 1.1);
-    const sun = new THREE.DirectionalLight(0xfff2dc, 2.4);
-    sun.position.set(40, 60, 25);
+  _lighting() {
+    this.scene.background = new THREE.Color(0x87ceeb);
+    this.scene.fog = new THREE.Fog(0x87ceeb, 80, 180);
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x666666, 1.2);
+    const sun = new THREE.DirectionalLight(0xfff5e6, 2.0);
+    sun.position.set(50, 80, 30);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const c = sun.shadow.camera;
-    c.left = -60; c.right = 60; c.top = 60; c.bottom = -60;
-    c.near = 1; c.far = 160;
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.05;
+    c.left = -70; c.right = 70; c.top = 70; c.bottom = -70;
+    c.near = 1; c.far = 200;
+    sun.shadow.bias = -0.0005;
+    
     this.scene.add(hemi, sun);
     this._objects.push(hemi, sun);
   }
 
-  _makeGround() {
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = 128;
-    const g = cv.getContext('2d');
-    g.fillStyle = '#a4a79e';
-    g.fillRect(0, 0, 128, 128);
-    g.strokeStyle = '#92958c';
-    g.lineWidth = 3;
-    g.strokeRect(0, 0, 128, 128);
-    const tex = new THREE.CanvasTexture(cv);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(20, 20);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(this.half * 2 + 20, this.half * 2 + 20), new THREE.MeshLambertMaterial({ map: tex }));
+  _ground() {
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(this.half * 2, this.half * 2),
+      this.mat.concrete
+    );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
-    this.ground = ground;
     this._objects.push(ground);
+
+    // Decorative lane markings
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    for (let x = -40; x <= 40; x += 10) {
+      const line = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 90), lineMat);
+      line.rotation.x = -Math.PI / 2;
+      line.position.set(x, 0.02, 0);
+      this.scene.add(line);
+      this._objects.push(line);
+    }
   }
 
-  _makeBoundary() {
+  _boundary() {
     const H = this.half;
-    const decor = (x, z, w, d) => {
-      const mesh = new THREE.Mesh(this._geo(w, 4, d), this.mat.fence);
-      mesh.position.set(x, 2, z); mesh.castShadow = mesh.receiveShadow = true;
-      this.scene.add(mesh); this._objects.push(mesh);
-    };
-    decor(0, -H - 0.5, H * 2 + 2, 1); decor(0, H + 0.5, H * 2 + 2, 1);
-    decor(-H - 0.5, 0, 1, H * 2); decor(H + 0.5, 0, 1, H * 2);
     const wall = (x, z, w, d) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 60, d), new THREE.MeshBasicMaterial({ visible: false }));
-      mesh.position.set(x, 30, z); mesh.visible = false;
-      this.scene.add(mesh); this._objects.push(mesh);
-      this.colliders.push({ min: new THREE.Vector3(x - w/2, 0, z - d/2), max: new THREE.Vector3(x + w/2, 60, z + d/2), mesh });
+      this.addCollider(x, 30, z, w, 60, d, null);
+      
+      // Visible walls (fences)
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 8, d), this.mat.concreteDark);
+      mesh.position.set(x, 4, z);
+      mesh.receiveShadow = true;
+      mesh.castShadow = true;
+      this.scene.add(mesh);
+      this._objects.push(mesh);
     };
-    wall(0, -H - 2, H * 2 + 8, 4); wall(0, H + 2, H * 2 + 8, 4);
-    wall(-H - 2, 0, 4, H * 2 + 8); wall(H + 2, 0, 4, H * 2 + 8);
+    wall(0, -H, H * 2, 2);
+    wall(0, H, H * 2, 2);
+    wall(-H, 0, 2, H * 2);
+    wall(H, 0, 2, H * 2);
   }
 
   _geo(w, h, d) {
-    const key = `${w.toFixed(3)}_${h.toFixed(3)}_${d.toFixed(3)}`;
+    const key = `${w}_${h}_${d}`;
     let g = this._geoCache.get(key);
-    if (!g) { g = new THREE.BoxGeometry(w, h, d); this._geoCache.set(key, g); }
+    if (!g) {
+      g = new THREE.BoxGeometry(w, h, d);
+      this._geoCache.set(key, g);
+    }
     return g;
   }
 
-  _box(x, z, w, d, h, mat, y0 = 0) {
+  addCollider(x, y, z, w, h, d, mesh) {
+    this.colliders.push({
+      min: new THREE.Vector3(x - w/2, 0, z - d/2),
+      max: new THREE.Vector3(x + w/2, h, z + d/2),
+      mesh: mesh
+    });
+  }
+
+  box(x, z, w, d, h, mat, y0 = 0) {
     const mesh = new THREE.Mesh(this._geo(w, h, d), mat);
-    mesh.position.set(x, y0 + h / 2, z);
-    mesh.castShadow = true; mesh.receiveShadow = true;
-    this.scene.add(mesh); this._objects.push(mesh);
-    this.colliders.push({ min: new THREE.Vector3(x - w/2, y0, z - d/2), max: new THREE.Vector3(x + w/2, y0 + h, z + d/2), mesh });
-    if (y0 === 0) this._rects.push({ x0: x - w/2, x1: x + w/2, z0: z - d/2, z1: z + d/2 });
+    mesh.position.set(x, y0 + h/2, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.scene.add(mesh);
+    this._objects.push(mesh);
+    this.addCollider(x, y0, z, w, h, d, mesh);
     return mesh;
   }
 
-  _stairs(x, z, dir, width, topH, stepH, run, mat) {
-    const n = Math.round(topH / stepH);
-    for (let i = 0; i < n - 1; i++) {
-      const h = topH - (i + 1) * stepH;
-      const off = (i + 0.5) * run;
-      const cx = x + dir[0] * off; const cz = z + dir[1] * off;
-      const alongX = dir[0] !== 0;
-      this._box(cx, cz, alongX ? run : width, alongX ? width : run, h, mat);
+  // Staircase ramp for walking up
+  ramp(x, z, dirX, dirZ, width, totalH, steps = 5) {
+    const stepH = totalH / steps;
+    const stepD = 1.5;
+    for (let i = 0; i < steps; i++) {
+      const cx = x + (dirX * stepD * i);
+      const cz = z + (dirZ * stepD * i);
+      const h = stepH * (i + 1);
+      this.box(cx, cz, dirX !== 0 ? stepD : width, dirZ !== 0 ? stepD : width, h, this.mat.concreteDark);
     }
   }
 
-  _container(x, z, alongX, mat, y0 = 0) {
-    return this._box(x, z, alongX ? 6 : 2.4, alongX ? 2.4 : 6, 2.6, mat, y0);
+  _centralTower() {
+    const cx = 0, cz = -10;
+    
+    // Base Platform
+    this.box(cx, cz, 16, 16, 3, this.mat.concreteDark);
+    
+    // Ramps leading up to the tower (4 sides)
+    this.ramp(cx, cz + 12, 0, -1, 6, 3, 3); // South
+    this.ramp(cx, cz - 12, 0, 1, 6, 3, 3);  // North
+    this.ramp(cx + 12, cz, -1, 0, 6, 3, 3); // East
+    this.ramp(cx - 12, cz, 1, 0, 6, 3, 3);  // West
+
+    // Central Pillar (Cover)
+    this.box(cx, cz, 4, 4, 6, this.mat.accentOrange, 3);
+    
+    // Small crates on top
+    this.box(cx - 5, cz + 5, 2, 2, 2, this.mat.white, 3);
+    this.box(cx + 5, cz - 5, 2, 2, 2, this.mat.white, 3);
   }
 
-  _free(x, z, hw, hd, margin = 1.2) {
-    for (const r of this._rects) {
-      if (x + hw + margin > r.x0 && x - hw - margin < r.x1 && z + hd + margin > r.z0 && z - hd - margin < r.z1) return false;
-    }
-    return true;
+  _leftBuilding() {
+    const cx = -28, cz = -10;
+    // Main building structure
+    this.box(cx, cz, 18, 24, 7, this.mat.concrete);
+    
+    // Rooftop cover
+    this.box(cx - 6, cz, 4, 6, 2, this.mat.accentCyan, 7);
+    this.box(cx + 6, cz, 4, 6, 2, this.mat.accentCyan, 7);
+
+    // Ramp up
+    this.ramp(cx, cz + 18, 0, -1, 4, 7, 7);
   }
 
-  _centralPlatform() {
-    const cx = 0, cz = -8, W = 14, D = 14, H = 2.4;
-    this._box(cx, cz, W, D, H, this.mat.concrete);
-    this._stairs(cx, cz + D/2, [0, 1], 4, H, 0.6, 1.4, this.mat.accent);
-    this._stairs(cx, cz - D/2, [0, -1], 4, H, 0.6, 1.4, this.mat.accent);
-    this._stairs(cx + W/2, cz, [1, 0], 4, H, 0.6, 1.4, this.mat.accent);
-    this._stairs(cx - W/2, cz, [-1, 0], 4, H, 0.6, 1.4, this.mat.accent);
-    this._box(cx, cz, 2, 2, 3, this.mat.steel, H);
-    this._box(cx - 3.5, cz + 3, 4, 0.6, 1.2, this.mat.concreteDark, H);
-    this._box(cx + 3.5, cz - 3, 4, 0.6, 1.2, this.mat.concreteDark, H);
-    this._box(cx + 4, cz + 3.5, 0.6, 3, 1.2, this.mat.concreteDark, H);
-    this._box(cx - 4, cz - 3.5, 0.6, 3, 1.2, this.mat.concreteDark, H);
+  _rightBuilding() {
+    const cx = 28, cz = -10;
+    // Main building
+    this.box(cx, cz, 18, 24, 7, this.mat.concrete);
+
+    // Rooftop sniper wall
+    this.box(cx, cz - 10, 18, 2, 2, this.mat.accentOrange, 7);
+    
+    // Ramp up
+    this.ramp(cx, cz + 18, 0, -1, 4, 7, 7);
   }
 
-  _spawnPlaza() {
-    const b = (x, z, alongX) => this._box(x, z, alongX ? 4 : 0.8, alongX ? 0.8 : 4, 1.1, this.mat.concreteDark);
-    b(-10, 8, true); b(10, 14, true); b(-12, 18, false); b(13, 7, false); b(-8, 24, true); b(9, 25, true);
-  }
+  _containerMaze() {
+    const positions = [
+      { x: -15, z: 20, c: this.mat.containerRed },
+      { x: -25, z: 25, c: this.mat.containerBlue },
+      { x: 15, z: 20, c: this.mat.containerYellow },
+      { x: 25, z: 25, c: this.mat.containerRed },
+      { x: -10, z: 35, c: this.mat.containerBlue },
+      { x: 10, z: 35, c: this.mat.containerYellow }
+    ];
 
-  _westBuildings() {
-    this._box(-28, -26, 14, 12, 6.6, this.mat.blue);
-    this._box(-28, -8, 14, 12, 6.6, this.mat.teal);
-    this._box(-28, -17, 5, 7, 0.4, this.mat.steel, 6.2);
-    this._box(-30.3, -17, 0.4, 6, 0.9, this.mat.steel, 6.6);
-    this._box(-25.7, -17, 0.4, 6, 0.9, this.mat.steel, 6.6);
-    this._stairs(-21, -4, [1, 0], 3, 6.6, 0.66, 1.0, this.mat.accent);
-    this._box(-28, -31.75, 14, 0.5, 1.0, this.mat.concreteDark, 6.6);
-    this._box(-28, -2.25, 14, 0.5, 1.0, this.mat.concreteDark, 6.6);
-    this._box(-31, -8, 1.6, 1.6, 1.4, this.mat.wood, 6.6);
-    this._box(-33, -25, 2, 2, 1.4, this.mat.woodDark, 6.6);
-  }
-
-  _westAlleys() {
-    this._box(-30, 14, 10, 10, 5, this.mat.brick);
-    this._box(-30, 26, 10, 10, 5, this.mat.blue);
-    this._box(-17, 20, 6, 16, 4, this.mat.teal);
-    this._stairs(-14, 14, [1, 0], 2.5, 4, 0.57, 1.0, this.mat.accent);
-  }
-
-  _containerYard() {
-    const cm = this._contMats;
-    this._container(19, -4, true, cm[0]); this._container(26, -4, true, cm[1]); this._container(33, -4, true, cm[2]);
-    this._container(19, 0.6, true, cm[3]); this._container(33, 0.6, true, cm[0]); this._container(26, 5, false, cm[1]);
-    this._container(22, 11, true, cm[2]); this._container(30, 11, true, cm[3]);
-    this._stairs(33, 11, [1, 0], 2.4, 2.6, 0.65, 1.1, this.mat.accent);
-    this._box(36, 6, 2, 3, 1.4, this.mat.concreteDark); this._box(16, 5.5, 3, 1.6, 1.4, this.mat.concreteDark);
-  }
-
-  _northArea() {
-    this._box(26, -30, 18, 10, 5.5, this.mat.steel);
-    this._stairs(17, -30, [-1, 0], 3, 5.5, 0.55, 1.0, this.mat.accent);
-    this._box(30, -30, 3, 3, 1.2, this.mat.wood, 5.5);
-    this._box(22, -33.8, 8, 0.5, 1.0, this.mat.concreteDark, 5.5);
-    this._box(-10, -32, 8, 6, 4.4, this.mat.brick);
-    this._stairs(-6, -32, [1, 0], 3, 4.4, 0.55, 1.0, this.mat.accent);
-    this._box(-10, -34.5, 6, 0.5, 1.0, this.mat.concreteDark, 4.4);
-    this._box(-15, -22, 8, 0.8, 2.6, this.mat.concrete); this._box(15, -22, 8, 0.8, 2.6, this.mat.concrete);
-    this._box(0, -26, 5, 0.8, 1.2, this.mat.concreteDark);
-    this._box(-4, -28, 0.8, 4, 1.2, this.mat.concreteDark); this._box(4, -28, 0.8, 4, 1.2, this.mat.concreteDark);
-  }
-
-  _scaffoldTower() {
-    const cx = 24, cz = 26, H = 5.2;
-    this._box(cx, cz, 6, 6, 0.4, this.mat.steel, H - 0.4);
-    [[-2.7, -2.7], [2.7, -2.7], [-2.7, 2.7], [2.7, 2.7]].forEach(([dx, dz]) => this._box(cx + dx, cz + dz, 0.4, 0.4, H - 0.4, this.mat.accent));
-    this._stairs(cx - 3, cz, [-1, 0], 3, H, 0.65, 1.0, this.mat.accent);
-    this._box(cx + 2.8, cz, 0.4, 6, 1.0, this.mat.concreteDark, H); this._box(cx, cz + 2.8, 6, 0.4, 1.0, this.mat.concreteDark, H);
-    this._box(cx + 1, cz - 4.5, 2, 2, 1.4, this.mat.wood);
-  }
-
-  _southWalls() {
-    this._box(-9, 33, 11, 0.8, 2.6, this.mat.concrete); this._box(9, 33, 11, 0.8, 2.6, this.mat.concrete);
-    this._box(-24, 36, 10, 0.8, 1.2, this.mat.concreteDark); this._box(0, 37, 4, 4, 1.6, this.mat.woodDark);
-  }
-
-  _scatterCrates(count) {
-    let placed = 0, attempts = 0;
-    while (placed < count && attempts < 600) {
-      attempts++;
-      const x = (this._rand() * 2 - 1) * 36; const z = (this._rand() * 2 - 1) * 36;
-      const s = 1.2 + this._rand() * 1.0;
-      const w = s * (0.8 + this._rand() * 0.6); const d = s * (0.8 + this._rand() * 0.6);
-      if (Math.abs(x) < 7 && z > 3 && z < 17) continue;
-      if (!this._free(x, z, w / 2, d / 2)) continue;
-      const mat = this._crateMats[Math.floor(this._rand() * this._crateMats.length)];
-      this._box(x, z, w, d, s, mat);
-      if (s <= 1.6 && this._rand() < 0.3) this._box(x, z, w * 0.85, d * 0.85, s * 0.9, mat, s);
-      placed++;
-    }
-  }
-
-  dispose() {
-    for (const o of this._objects) {
-      this.scene.remove(o);
-      if (o.material && o.material.dispose && !Object.values(this.mat).includes(o.material)) {
-        if (o.material.map) o.material.map.dispose();
-        o.material.dispose();
+    positions.forEach(p => {
+      // Base container
+      this.box(p.x, p.z, 10, 3, 3, p.c);
+      // Stacked container
+      if (Math.random() > 0.5) {
+        this.box(p.x, p.z, 10, 3, 3, this.mat.concreteDark, 3);
       }
+    });
+  }
+
+  _scatterCover() {
+    // Scatter crates around the open areas
+    for (let i = 0; i < 15; i++) {
+      const x = (Math.random() - 0.5) * 60;
+      const z = (Math.random() - 0.5) * 60;
+      
+      // Don't block spawn or ramps
+      if (Math.abs(x) < 8 && Math.abs(z) < 15) continue;
+      if (Math.abs(x) > 20 && Math.abs(z) < 20) continue;
+
+      const s = 1.5 + Math.random() * 1.5;
+      const mat = this._crateMats[Math.floor(Math.random() * this._crateMats.length)];
+      this.box(x, z, s, s, s, mat);
     }
-    this._geoCache.forEach((g) => g.dispose());
-    Object.values(this.mat).forEach((m) => m.dispose());
-    this._geoCache.clear(); this._objects.length = 0; this.colliders.length = 0; this._rects.length = 0;
   }
 }
