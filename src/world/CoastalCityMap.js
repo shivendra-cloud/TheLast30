@@ -9,8 +9,6 @@ export default class CoastalCityMap {
 
     this._objects = [];   
     this._geoCache = new Map();
-    
-    // Seeded RNG for deterministic layout
     this._seed = 1337;
     
     this.build();
@@ -29,11 +27,11 @@ export default class CoastalCityMap {
     this._ground();
     this._boundary();
 
-    // Level Design
     this._centralFortress();
     this._westContainers();
     this._eastAlleys();
     this._northSniperTower();
+    this._southSpawn();
     this._scatterCover();
   }
 
@@ -61,7 +59,7 @@ export default class CoastalCityMap {
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0x666666, 1.2);
     const sun = new THREE.DirectionalLight(0xfff5e6, 2.2);
-    sun.position.set(60, 80, -40); // Angled for long shadows
+    sun.position.set(60, 80, -40);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const c = sun.shadow.camera;
@@ -87,13 +85,11 @@ export default class CoastalCityMap {
   _boundary() {
     const H = this.half;
     const wall = (x, z, w, d) => {
-      // Invisible collider
       this.colliders.push({
         min: new THREE.Vector3(x - w/2, 0, z - d/2),
         max: new THREE.Vector3(x + w/2, 50, z + d/2),
         mesh: null
       });
-      // Visible wall
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 10, d), this.mat.concreteDark);
       mesh.position.set(x, 5, z);
       mesh.receiveShadow = true;
@@ -125,7 +121,6 @@ export default class CoastalCityMap {
     this.scene.add(mesh);
     this._objects.push(mesh);
     
-    // Add collider
     this.colliders.push({
       min: new THREE.Vector3(x - w/2, y0, z - d/2),
       max: new THREE.Vector3(x + w/2, y0 + h, z + d/2),
@@ -147,41 +142,33 @@ export default class CoastalCityMap {
 
   _centralFortress() {
     const cx = 0, cz = 0;
-    
-    // Massive raised platform
     this.box(cx, cz, 24, 24, 4, this.mat.concrete);
     
-    // Ramps on all 4 sides
-    this.ramp(cx, cz + 15, 0, -1, 8, 4, 4); // South
-    this.ramp(cx, cz - 15, 0, 1, 8, 4, 4);  // North
-    this.ramp(cx + 15, cz, -1, 0, 8, 4, 4); // East
-    this.ramp(cx - 15, cz, 1, 0, 8, 4, 4);  // West
+    // Ramps
+    this.ramp(cx, cz + 15, 0, -1, 8, 4, 4);
+    this.ramp(cx, cz - 15, 0, 1, 8, 4, 4);
+    this.ramp(cx + 15, cz, -1, 0, 8, 4, 4);
+    this.ramp(cx - 15, cz, 1, 0, 8, 4, 4);
 
-    // Cover walls on top
+    // Cover on top
     this.box(cx, cz - 10, 20, 1, 3, this.mat.accentOrange, 4);
     this.box(cx, cz + 10, 20, 1, 3, this.mat.accentOrange, 4);
     this.box(cx - 10, cz, 1, 20, 3, this.mat.accentOrange, 4);
     this.box(cx + 10, cz, 1, 20, 3, this.mat.accentOrange, 4);
-    
-    // Central cover block
     this.box(cx, cz, 6, 6, 4, this.mat.concreteDark, 4);
   }
 
   _westContainers() {
-    // A maze of shipping containers
     for (let z = -35; z <= 35; z += 12) {
       this.box(-35, z, 12, 4, 3, this._containerMats[Math.floor(this._rand() * 3)]);
-      // Stack some
       if (this._rand() > 0.6) {
         this.box(-35, z, 10, 3, 3, this.mat.concreteDark, 3);
       }
     }
-    // A ramp to get on top
     this.ramp(-25, 20, -1, 0, 6, 3, 3);
   }
 
   _eastAlleys() {
-    // Tall concrete walls creating narrow corridors
     const wallSpots = [
       { x: 25, z: -20, w: 2, d: 30 },
       { x: 35, z: -20, w: 2, d: 30 },
@@ -189,45 +176,37 @@ export default class CoastalCityMap {
       { x: 40, z: 20, w: 2, d: 20 },
       { x: 25, z: 35, w: 25, d: 2 },
     ];
+    wallSpots.forEach(s => this.box(s.x, s.z, s.w, s.d, 8, this.mat.concrete));
     
-    wallSpots.forEach(s => {
-      this.box(s.x, s.z, s.w, s.d, 8, this.mat.concrete);
-    });
-
-    // Rooftop on the east side
     this.box(35, 25, 14, 14, 6, this.mat.concrete);
     this.ramp(35, 35, 0, -1, 4, 6, 6);
-    
-    // Cover on roof
     this.box(35, 25, 4, 4, 1.5, this.mat.accentBlue, 6);
   }
 
   _northSniperTower() {
-    // A tall tower for sniping
     this.box(0, -35, 12, 12, 8, this.mat.concrete);
-    this.box(0, -35, 10, 10, 2, this.mat.accentOrange, 8); // Roof parapet
-
-    // Long winding ramp
+    this.box(0, -35, 10, 10, 2, this.mat.accentOrange, 8);
     this.ramp(8, -25, -1, -1, 4, 8, 8);
-
-    // Cover crates at the base
     this.box(-8, -25, 3, 3, 3, this.mat.crateWood);
     this.box(8, -25, 3, 3, 3, this.mat.crateWood);
   }
 
+  _southSpawn() {
+    // Keep spawn area clear but add some cover around it
+    this.box(-15, 35, 6, 1, 2.5, this.mat.concreteDark);
+    this.box(15, 35, 6, 1, 2.5, this.mat.concreteDark);
+    this.box(-10, 40, 1, 6, 2.5, this.mat.concreteDark);
+    this.box(10, 40, 1, 6, 2.5, this.mat.concreteDark);
+  }
+
   _scatterCover() {
-    // Scatter crates and low walls around the open areas
     for (let i = 0; i < 30; i++) {
       const x = (this._rand() - 0.5) * 80;
       const z = (this._rand() - 0.5) * 80;
       
-      // Keep spawn area clear
       if (Math.abs(x) < 10 && z > 20 && z < 40) continue;
-      
-      // Keep center clear
       if (Math.abs(x) < 15 && Math.abs(z) < 15) continue;
 
-      // Scatter either crates or low cover walls
       if (this._rand() > 0.4) {
         const s = 1.5 + this._rand() * 2;
         this.box(x, z, s, s, s, this._crateMats[Math.floor(this._rand() * 3)]);
