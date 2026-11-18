@@ -4,9 +4,9 @@ export default class CoastalCityMap {
   constructor(scene) {
     this.scene = scene;
     this.colliders = [];
-    this.spawnPoint = new THREE.Vector3(0, 1, 30);
-    this.half = 50; 
-
+    this.spawnPoint = new THREE.Vector3(0, 1, 45);
+    this.half = 60; 
+    
     this._objects = [];   
     this._geoCache = new Map();
     this._seed = 1337;
@@ -27,44 +27,45 @@ export default class CoastalCityMap {
     this._ground();
     this._boundary();
 
-    this._centralFortress();
-    this._westContainers();
-    this._eastAlleys();
-    this._northSniperTower();
-    this._southSpawn();
-    this._scatterCover();
+    // Map Sections
+    this._centralPlaza();
+    this._warehouse();
+    this._containerMazeLeft();
+    this._containerMazeRight();
+    this._watchtower();
+    this._factory();
+    this._scatterProps();
   }
 
   _materials() {
     const m = (c) => new THREE.MeshLambertMaterial({ color: c });
     this.mat = {
-      concrete: m(0xb0b4b8),
-      concreteDark: m(0x555a5e),
-      asphalt: m(0x333333),
-      accentOrange: m(0xe86c2a),
-      accentBlue: m(0x2a7be8),
-      accentYellow: m(0xe8c22a),
-      crateWood: m(0x8b5a2b),
-      containerRed: m(0xa83232),
-      containerBlue: m(0x324da8),
-      containerGreen: m(0x32a852),
+      asphalt: m(0x2b2b2b),
+      concrete: m(0x7a7a7a),
+      concreteDark: m(0x4a4a4a),
+      rust: m(0x8b3a2b),
+      metal: m(0x555555),
+      containerRed: m(0x992222),
+      containerBlue: m(0x224488),
+      containerGreen: m(0x226622),
+      containerYellow: m(0x998822),
+      wood: m(0x8b5a2b),
+      glass: new THREE.MeshBasicMaterial({ color: 0xaaddff, transparent: true, opacity: 0.6 }),
     };
-    this._crateMats = [this.mat.crateWood, this.mat.accentOrange, this.mat.concreteDark];
-    this._containerMats = [this.mat.containerRed, this.mat.containerBlue, this.mat.containerGreen];
   }
 
   _lighting() {
-    this.scene.background = new THREE.Color(0x87ceeb);
-    this.scene.fog = new THREE.Fog(0x87ceeb, 90, 200);
+    this.scene.background = new THREE.Color(0xa6a6a6); // Hazy sky
+    this.scene.fog = new THREE.Fog(0xa6a6a6, 80, 220);
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x666666, 1.2);
-    const sun = new THREE.DirectionalLight(0xfff5e6, 2.2);
-    sun.position.set(60, 80, -40);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+    const sun = new THREE.DirectionalLight(0xfff0cc, 2.5);
+    sun.position.set(60, 100, 40); 
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const c = sun.shadow.camera;
     c.left = -80; c.right = 80; c.top = 80; c.bottom = -80;
-    c.near = 1; c.far = 200;
+    c.near = 1; c.far = 250;
     sun.shadow.bias = -0.0005;
     
     this.scene.add(hemi, sun);
@@ -85,13 +86,15 @@ export default class CoastalCityMap {
   _boundary() {
     const H = this.half;
     const wall = (x, z, w, d) => {
+      // Invisible collision wall
       this.colliders.push({
         min: new THREE.Vector3(x - w/2, 0, z - d/2),
-        max: new THREE.Vector3(x + w/2, 50, z + d/2),
+        max: new THREE.Vector3(x + w/2, 60, z + d/2),
         mesh: null
       });
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 10, d), this.mat.concreteDark);
-      mesh.position.set(x, 5, z);
+      // Visible fence
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 12, d), this.mat.concreteDark);
+      mesh.position.set(x, 6, z);
       mesh.receiveShadow = true;
       mesh.castShadow = true;
       this.scene.add(mesh);
@@ -129,9 +132,9 @@ export default class CoastalCityMap {
     return mesh;
   }
 
-  ramp(x, z, dirX, dirZ, width, totalH, steps = 6) {
+  ramp(x, z, dirX, dirZ, width, totalH, steps = 8) {
     const stepH = totalH / steps;
-    const stepD = 1.2;
+    const stepD = 1.5;
     for (let i = 0; i < steps; i++) {
       const cx = x + (dirX * stepD * i);
       const cz = z + (dirZ * stepD * i);
@@ -140,79 +143,151 @@ export default class CoastalCityMap {
     }
   }
 
-  _centralFortress() {
+  _centralPlaza() {
     const cx = 0, cz = 0;
-    this.box(cx, cz, 24, 24, 4, this.mat.concrete);
     
-    // Ramps
-    this.ramp(cx, cz + 15, 0, -1, 8, 4, 4);
-    this.ramp(cx, cz - 15, 0, 1, 8, 4, 4);
-    this.ramp(cx + 15, cz, -1, 0, 8, 4, 4);
-    this.ramp(cx - 15, cz, 1, 0, 8, 4, 4);
-
-    // Cover on top
-    this.box(cx, cz - 10, 20, 1, 3, this.mat.accentOrange, 4);
-    this.box(cx, cz + 10, 20, 1, 3, this.mat.accentOrange, 4);
-    this.box(cx - 10, cz, 1, 20, 3, this.mat.accentOrange, 4);
-    this.box(cx + 10, cz, 1, 20, 3, this.mat.accentOrange, 4);
-    this.box(cx, cz, 6, 6, 4, this.mat.concreteDark, 4);
+    // The crashed helicopter (Built from boxes)
+    const heliY = 1.5;
+    this.box(cx, cz, 12, 4, 3, this.mat.metal, heliY); // Body
+    this.box(cx + 8, cz, 4, 3, 2, this.mat.metal, heliY); // Tail
+    this.box(cx - 4, cz - 3, 2, 2, 1.5, this.mat.concreteDark, heliY); // Rotor base
+    
+    // Helicopter rotor blades (angled)
+    const rotor1 = this.box(cx - 4, cz - 3, 14, 1, 0.2, this.mat.concrete, heliY + 1.5);
+    rotor1.rotation.y = Math.PI / 4;
+    rotor1.rotation.z = 0.2;
+    
+    // Cover around the helicopter
+    this.box(cx - 12, cz + 10, 6, 2, 1.5, this.mat.concrete);
+    this.box(cx + 12, cz - 10, 6, 2, 1.5, this.mat.concrete);
+    this.box(cx + 10, cz + 12, 2, 6, 1.5, this.mat.concrete);
+    this.box(cx - 10, cz - 12, 2, 6, 1.5, this.mat.concrete);
   }
 
-  _westContainers() {
-    for (let z = -35; z <= 35; z += 12) {
-      this.box(-35, z, 12, 4, 3, this._containerMats[Math.floor(this._rand() * 3)]);
-      if (this._rand() > 0.6) {
-        this.box(-35, z, 10, 3, 3, this.mat.concreteDark, 3);
+  _warehouse() {
+    const cx = 0, cz = -35;
+    // Main building
+    this.box(cx, cz, 30, 20, 12, this.mat.concrete);
+    
+    // Rooftop details
+    this.box(cx, cz, 28, 18, 0.5, this.mat.concreteDark, 12); // Roof
+    this.box(cx - 8, cz - 5, 6, 6, 1.5, this.mat.rust, 12); // AC Unit
+    
+    // Skylights (glass)
+    this.box(cx, cz + 5, 10, 2, 0.2, this.mat.glass, 12.1);
+    
+    // Ramp up to roof (right side)
+    this.ramp(cx + 20, cz + 5, -1, 0, 4, 12, 12);
+    
+    // Entrance cover
+    this.box(cx - 6, cz + 10, 4, 4, 2, this.mat.wood);
+    this.box(cx + 6, cz + 10, 4, 4, 2, this.mat.wood);
+  }
+
+  _containerMazeLeft() {
+    // Dense maze of containers on the left
+    for (let z = -10; z >= -40; z -= 10) {
+      // Row of containers
+      this.box(-30, z, 12, 3, 3, this.mat.containerRed);
+      this.box(-45, z, 12, 3, 3, this.mat.containerBlue);
+      
+      // Stacked containers (creates verticality)
+      if (this._rand() > 0.4) {
+        this.box(-30, z, 10, 3, 3, this.mat.containerGreen, 3);
       }
     }
-    this.ramp(-25, 20, -1, 0, 6, 3, 3);
-  }
-
-  _eastAlleys() {
-    const wallSpots = [
-      { x: 25, z: -20, w: 2, d: 30 },
-      { x: 35, z: -20, w: 2, d: 30 },
-      { x: 30, z: 5, w: 12, d: 2 },
-      { x: 40, z: 20, w: 2, d: 20 },
-      { x: 25, z: 35, w: 25, d: 2 },
-    ];
-    wallSpots.forEach(s => this.box(s.x, s.z, s.w, s.d, 8, this.mat.concrete));
     
-    this.box(35, 25, 14, 14, 6, this.mat.concrete);
-    this.ramp(35, 35, 0, -1, 4, 6, 6);
-    this.box(35, 25, 4, 4, 1.5, this.mat.accentBlue, 6);
+    // Ramp onto a container
+    this.ramp(-20, -10, -1, 0, 3, 3, 3);
   }
 
-  _northSniperTower() {
-    this.box(0, -35, 12, 12, 8, this.mat.concrete);
-    this.box(0, -35, 10, 10, 2, this.mat.accentOrange, 8);
-    this.ramp(8, -25, -1, -1, 4, 8, 8);
-    this.box(-8, -25, 3, 3, 3, this.mat.crateWood);
-    this.box(8, -25, 3, 3, 3, this.mat.crateWood);
-  }
-
-  _southSpawn() {
-    // Keep spawn area clear but add some cover around it
-    this.box(-15, 35, 6, 1, 2.5, this.mat.concreteDark);
-    this.box(15, 35, 6, 1, 2.5, this.mat.concreteDark);
-    this.box(-10, 40, 1, 6, 2.5, this.mat.concreteDark);
-    this.box(10, 40, 1, 6, 2.5, this.mat.concreteDark);
-  }
-
-  _scatterCover() {
-    for (let i = 0; i < 30; i++) {
-      const x = (this._rand() - 0.5) * 80;
-      const z = (this._rand() - 0.5) * 80;
+  _containerMazeRight() {
+    // Dense maze of containers on the right
+    for (let z = 10; z <= 40; z += 10) {
+      // Perpendicular layout (creates corridors)
+      this.box(30, z, 3, 12, 3, this.mat.containerYellow);
+      this.box(45, z, 3, 12, 3, this.mat.containerRed);
       
-      if (Math.abs(x) < 10 && z > 20 && z < 40) continue;
-      if (Math.abs(x) < 15 && Math.abs(z) < 15) continue;
-
       if (this._rand() > 0.4) {
-        const s = 1.5 + this._rand() * 2;
-        this.box(x, z, s, s, s, this._crateMats[Math.floor(this._rand() * 3)]);
+        this.box(30, z, 3, 10, 3, this.mat.containerBlue, 3);
+      }
+    }
+    
+    // Ramp onto a container
+    this.ramp(20, 10, 1, 0, 3, 3, 3);
+  }
+
+  _watchtower() {
+    const cx = -40, cz = -40;
+    const H = 15;
+    
+    // Four legs
+    this.box(cx - 2, cz - 2, 1, 1, H, this.mat.concreteDark);
+    this.box(cx + 2, cz - 2, 1, 1, H, this.mat.concreteDark);
+    this.box(cx - 2, cz + 2, 1, 1, H, this.mat.concreteDark);
+    this.box(cx + 2, cz + 2, 1, 1, H, this.mat.concreteDark);
+    
+    // Platform
+    this.box(cx, cz, 8, 8, 0.5, this.mat.metal, H);
+    
+    // Cover walls on platform
+    this.box(cx, cz - 4, 8, 1, 2, this.mat.rust, H);
+    this.box(cx, cz + 4, 8, 1, 2, this.mat.rust, H);
+    this.box(cx - 4, cz, 1, 8, 2, this.mat.rust, H);
+    this.box(cx + 4, cz, 1, 8, 2, this.mat.rust, H);
+    
+    // Long winding ramp up
+    this.ramp(cx + 4, cz + 10, 0, -1, 3, H, 15);
+  }
+
+  _factory() {
+    const cx = -35, cz = 35;
+    // Sawtooth roof structure
+    this.box(cx, cz, 20, 15, 8, this.mat.rust);
+    this.box(cx - 4, cz, 20, 4, 2, this.mat.concrete, 8);
+    this.box(cx + 4, cz, 20, 4, 2, this.mat.concrete, 8);
+    
+    // Smokestack
+    const smoke = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2, 20, 8), this.mat.concreteDark);
+    smoke.position.set(cx + 8, 10, cz - 6);
+    smoke.castShadow = true;
+    this.scene.add(smoke);
+    this._objects.push(smoke);
+    this.colliders.push({
+      min: new THREE.Vector3(cx + 8 - 2, 0, cz - 6 - 2),
+      max: new THREE.Vector3(cx + 8 + 2, 20, cz - 6 + 2),
+      mesh: smoke
+    });
+
+    // Ramp to roof
+    this.ramp(cx - 12, cz, 1, 0, 4, 8, 8);
+  }
+
+  _scatterProps() {
+    // Scatter barrels and crates around open areas
+    for (let i = 0; i < 20; i++) {
+      const x = (this._rand() - 0.5) * 100;
+      const z = (this._rand() - 0.5) * 100;
+      
+      // Keep spawn area clear
+      if (Math.abs(x) < 15 && z > 35) continue;
+      
+      // Keep center plaza mostly clear
+      if (Math.abs(x) < 20 && Math.abs(z) < 20) continue;
+
+      if (this._rand() > 0.5) {
+        this.box(x, z, 2, 2, 2, this.mat.wood);
       } else {
-        const isLong = this._rand() > 0.5;
-        this.box(x, z, isLong ? 6 : 1, isLong ? 1 : 6, 2.5, this.mat.concreteDark);
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 2, 8), this.mat.rust);
+        barrel.position.set(x, 1, z);
+        barrel.castShadow = true;
+        this.scene.add(barrel);
+        this._objects.push(barrel);
+        this.colliders.push({
+          min: new THREE.Vector3(x - 0.8, 0, z - 0.8),
+          max: new THREE.Vector3(x + 0.8, 2, z + 0.8),
+          mesh: barrel
+        });
       }
     }
   }
