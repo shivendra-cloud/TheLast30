@@ -1,845 +1,311 @@
 import * as THREE from 'three';
 
+// Seeded RNG so the city looks the same every run
+function makeRng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
 export default class CoastalCityMap {
-  constructor(scene, options = {}) {
-    if (!scene) {
-      throw new Error('CoastalCityMap requires a THREE.Scene');
-    }
-
+  constructor(scene) {
     this.scene = scene;
-    this.options = options;
-    this.group = new THREE.Group();
-    this.group.name = 'THE_LAST_30_NYC_CITY';
-
     this.colliders = [];
-    this.buildings = [];
-    this.stage = 1;
-    this.stageGroups = [];
-    this.geometryCache = new Map();
-    this.dummy = new THREE.Object3D();
-
-    this.createMaterials();
-    this.createLighting();
-
-    this.scene.add(this.group);
-
-    this.createGround();
-    this.createRoadNetwork();
-    this.createBuildings();
-    this.createWindows();
-    this.createFireEscapes();
-    this.createRooftopEquipment();
-    this.createStreetFurniture();
-    this.createStreetLights();
-    this.createTrafficSignals();
-    this.createVehicles();
-    this.createDumpsters();
-    this.createDistantBuildings();
-
-    console.log('THE LAST 30: NYC city generated.');
-    console.log('Collision objects:', this.colliders.length);
+    this.rng = makeRng(30);
+    this.build();
   }
 
-  // MATERIALS
-
-  createMaterials() {
-    const mat = (color, roughness = 0.9, metalness = 0) =>
-      new THREE.MeshStandardMaterial({
-        color,
-        roughness,
-        metalness
-      });
-
-    this.m = {
-      ground: mat(0x555653),
-      asphalt: mat(0x34383a),
-      asphaltPatch: mat(0x414343),
-      concrete: mat(0x858783),
-      sidewalk: mat(0xaaa9a2),
-      curb: mat(0xc0beb6),
-
-      buildings: [
-        mat(0x777a78),
-        mat(0x8b8176),
-        mat(0x9a958a),
-        mat(0x666c70),
-        mat(0xa39b8c),
-        mat(0x77716b)
-      ],
-
-      brick: mat(0x794f42),
-      darkBrick: mat(0x59463e),
-      roof: mat(0x444746),
-
-      window: new THREE.MeshStandardMaterial({
-        color: 0x253a46,
-        roughness: 0.25,
-        metalness: 0.45
-      }),
-
-      windowLit: new THREE.MeshStandardMaterial({
-        color: 0x9d9576,
-        emissive: 0x5b4827,
-        emissiveIntensity: 0.25,
-        roughness: 0.45
-      }),
-
-      metal: mat(0x555d60, 0.65, 0.35),
-      darkMetal: mat(0x292e30, 0.75, 0.25),
-      rust: mat(0x704a37),
-      yellow: mat(0xd0a82e),
-      white: mat(0xd7d5cb),
-      red: mat(0x873b32),
-      blue: mat(0x3e596c),
-      green: mat(0x425c4b),
-      black: mat(0x171b1c)
-    };
-
-    this.wheelMaterial = mat(0x17191a, 1);
+  build() {
+    this.buildLighting();
+    this.buildGround();
+    this.buildRoadMarkings();
+    this.buildSidewalks();
+    this.buildBuildings();
+    this.buildScaffolding();
+    this.buildAlleyProps();
+    this.buildCars();
+    this.buildStreetlights();
+    this.buildBounds();
   }
 
-  // LIGHTING AND FOG
+  // ---------- Lighting: clear blue sky + low sharp sun ----------
+  buildLighting() {
+    this.scene.background = new THREE.Color(0x6fb8f0);
+    this.scene.fog = new THREE.Fog(0xbfe0f7, 120, 380);
 
-  createLighting() {
-    this.scene.fog = new THREE.FogExp2(0x9da8ad, 0.0018);
+    const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x8a8a8a, 0.55);
+    this.scene.add(hemi);
 
-    const hemisphere = new THREE.HemisphereLight(
-      0xdce8f0,
-      0x55504a,
-      1.15
-    );
-
-    this.scene.add(hemisphere);
-    this.hemisphere = hemisphere;
-
-    const sun = new THREE.DirectionalLight(0xffe6c4, 3.0);
-
-    sun.position.set(-120, 175, 100);
+    const sun = new THREE.DirectionalLight(0xfff1d6, 1.6);
+    sun.position.set(-90, 70, -50); // low angle = long shadows across the street
     sun.target.position.set(0, 0, 0);
     sun.castShadow = true;
-
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -220;
-    sun.shadow.camera.right = 220;
-    sun.shadow.camera.top = 220;
-    sun.shadow.camera.bottom = -220;
-    sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 450;
-    sun.shadow.normalBias = 0.035;
-    sun.shadow.bias = -0.00015;
-    sun.shadow.radius = 2;
-
+    const cam = sun.shadow.camera;
+    cam.left = -140; cam.right = 140; cam.top = 140; cam.bottom = -140;
+    cam.near = 1; cam.far = 320;
+    sun.shadow.bias = -0.0005;
     this.scene.add(sun);
     this.scene.add(sun.target);
-
-    this.sun = sun;
   }
 
-  // GEOMETRY HELPERS
-
-  getBoxGeometry(width, height, depth) {
-    const key = `${width.toFixed(2)}_${height.toFixed(2)}_${depth.toFixed(2)}`;
-
-    if (!this.geometryCache.has(key)) {
-      this.geometryCache.set(
-        key,
-        new THREE.BoxGeometry(width, height, depth)
-      );
-    }
-
-    return this.geometryCache.get(key);
-  }
-
-  addBox(x, y, z, width, height, depth, material, options = {}) {
-    const mesh = new THREE.Mesh(
-      this.getBoxGeometry(width, height, depth),
-      material
+  // ---------- Ground + road ----------
+  buildGround() {
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(400, 400),
+      new THREE.MeshLambertMaterial({ color: 0xb4b4b4 })
     );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
 
-    mesh.position.set(x, y, z);
-    mesh.castShadow = options.castShadow !== false;
-    mesh.receiveShadow = options.receiveShadow !== false;
-
-    if (options.rotationY) {
-      mesh.rotation.y = options.rotationY;
-    }
-
-    this.group.add(mesh);
-
-    if (options.collider) {
-      this.addCollider(x, z, width, depth, height, mesh);
-    }
-
-    return mesh;
-  }
-
-  addCylinder(x, y, z, radiusTop, radiusBottom, height, material, segments = 8) {
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(
-        radiusTop,
-        radiusBottom,
-        height,
-        segments
-      ),
-      material
+    // Wide 26-unit asphalt road, 4 lanes
+    const road = new THREE.Mesh(
+      new THREE.PlaneGeometry(26, 400),
+      new THREE.MeshLambertMaterial({ color: 0x4a4a4a })
     );
-
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-
-    this.group.add(mesh);
-    return mesh;
+    road.rotation.x = -Math.PI / 2;
+    road.position.set(0, 0.02, 0);
+    road.receiveShadow = true;
+    this.scene.add(road);
   }
 
-  // COLLIDERS: PLAYER AND NPC COMPATIBILITY
-
-  addCollider(x, z, width, depth, height, meshObject) {
-    const collider = {
-      min: new THREE.Vector3(
-        x - width / 2,
-        0,
-        z - depth / 2
-      ),
-      max: new THREE.Vector3(
-        x + width / 2,
-        height,
-        z + depth / 2
-      ),
-      mesh: meshObject
+  buildRoadMarkings() {
+    const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const yellow = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
+    const flat = (geo, mat, x, z) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, 0.04, z);
+      this.scene.add(m);
     };
 
-    this.colliders.push(collider);
-    return collider;
-  }
+    const yGeo = new THREE.PlaneGeometry(0.3, 400);
+    flat(yGeo, yellow, -0.35, 0);
+    flat(yGeo, yellow, 0.35, 0);
 
-  getCollisionBoxes() {
-    return this.colliders;
-  }
-
-  getGroup() {
-    return this.group;
-  }
-
-  // GROUND
-
-  createGround() {
-    this.addBox(
-      0, -0.6, 0,
-      600, 1, 600,
-      this.m.ground
-    );
-  }
-
-  // ROADS AND SIDEWALKS
-
-  createRoadNetwork() {
-    this.addBox(
-      0, 0.02, 0,
-      29, 0.12, 560,
-      this.m.asphalt
-    );
-
-    for (const side of [-1, 1]) {
-      this.addBox(
-        side * 18.8, 0.16, 0,
-        8.6, 0.32, 560,
-        this.m.sidewalk
-      );
-
-      this.addBox(
-        side * 14.35, 0.18, 0,
-        0.65, 0.36, 560,
-        this.m.curb
-      );
-
-      this.addBox(
-        side * 23.4, 0.12, 0,
-        0.6, 0.24, 560,
-        this.m.concrete
-      );
+    const dash = new THREE.PlaneGeometry(0.3, 6);
+    for (let z = -190; z <= 190; z += 12) {
+      for (const x of [-6.5, 6.5]) flat(dash, white, x, z);
     }
 
-    const crossStreets = [-210, -140, -70, 0, 70, 140, 210];
+    // Crosswalks
+    const bar = new THREE.PlaneGeometry(1, 3);
+    for (const cz of [-60, 35]) {
+      for (let x = -11; x <= 11; x += 2) flat(bar, white, x, cz);
+    }
+  }
 
-    for (const z of crossStreets) {
-      this.addBox(
-        0, 0.025, z,
-        560, 0.13, 15,
-        this.m.asphalt
-      );
+  // ---------- Raised sidewalks + curbs (visual only, walkable) ----------
+  buildSidewalks() {
+    const swMat = new THREE.MeshLambertMaterial({ color: 0xc2c2c2 });
+    const curbMat = new THREE.MeshLambertMaterial({ color: 0xd8d8d8 });
+    const swGeo = new THREE.BoxGeometry(6, 0.3, 400);
+    const curbGeo = new THREE.BoxGeometry(0.4, 0.32, 400);
+    for (const x of [-16, 16]) {
+      const sw = new THREE.Mesh(swGeo, swMat);
+      sw.position.set(x, 0.15, 0);
+      sw.receiveShadow = true;
+      this.scene.add(sw);
 
+      const curb = new THREE.Mesh(curbGeo, curbMat);
+      curb.position.set(x - Math.sign(x) * 2.8, 0.16, 0);
+      curb.receiveShadow = true;
+      this.scene.add(curb);
+    }
+  }
+
+  // ---------- Layered skyscrapers with instanced protruding windows ----------
+  buildBuildings() {
+    const rng = this.rng;
+    const palette = [0x8c8f94, 0x9a8f84, 0x7d8590, 0xa39a8e, 0x6f747a];
+    const trimMat = new THREE.MeshLambertMaterial({ color: 0x5a5a5a });
+    const winGeo = new THREE.BoxGeometry(2, 2, 0.3);
+    const winMat = new THREE.MeshLambertMaterial({ color: 0x4f86b8, emissive: 0x0a1a2a });
+
+    const winMatrices = [];
+    const m4 = new THREE.Matrix4();
+    const addWin = (x, y, z, side) => {
+      // rotate so thin axis points along X (toward the road)
+      m4.makeRotationY(Math.PI / 2);
+      m4.setPosition(x, y, z);
+      winMatrices.push(m4.clone());
+    };
+
+    for (let z = -150; z <= 150; z += 50) {
       for (const side of [-1, 1]) {
-        this.addBox(
-          0, 0.12, z + side * 10,
-          560, 0.24, 2.2,
-          this.m.concrete
-        );
-      }
+        const xPos = side * 33;
+        const color = palette[Math.floor(rng() * palette.length)];
+        const mat = new THREE.MeshLambertMaterial({ color });
 
-      for (let x = -11; x <= 11; x += 3) {
-        this.addBox(
-          x, 0.105, z + 9.5,
-          1.5, 0.025, 3.5,
-          this.m.white,
-          { castShadow: false }
-        );
+        // Podium base
+        const h1 = 18 + rng() * 10;
+        const base = new THREE.Mesh(new THREE.BoxGeometry(20, h1, 40), mat);
+        base.position.set(xPos, h1 / 2, z);
+        base.castShadow = true; base.receiveShadow = true;
+        this.scene.add(base);
+        this.addCollider(xPos, h1 / 2, z, 20, h1, 40, base);
 
-        this.addBox(
-          x, 0.105, z - 9.5,
-          1.5, 0.025, 3.5,
-          this.m.white,
-          { castShadow: false }
-        );
+        // Cornice ledge on top of podium
+        const cornice = new THREE.Mesh(new THREE.BoxGeometry(21, 0.8, 41), trimMat);
+        cornice.position.set(xPos, h1 + 0.4, z);
+        cornice.castShadow = true;
+        this.scene.add(cornice);
+
+        // Set-back tower
+        const h2 = 40 + rng() * 45;
+        const tower = new THREE.Mesh(new THREE.BoxGeometry(16, h2, 30), mat);
+        tower.position.set(xPos, h1 + h2 / 2, z);
+        tower.castShadow = true; tower.receiveShadow = true;
+        this.scene.add(tower);
+        this.addCollider(xPos, h1 + h2 / 2, z, 16, h2, 30, tower);
+
+        // Rooftop mechanical box
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(6, 3, 8), trimMat);
+        roof.position.set(xPos, h1 + h2 + 1.5, z);
+        roof.castShadow = true;
+        this.scene.add(roof);
+        this.addCollider(xPos, h1 + h2 + 1.5, z, 6, 3, 8, roof);
+
+        // Entrance awning
+        const awn = new THREE.Mesh(new THREE.BoxGeometry(3, 0.3, 8), trimMat);
+        awn.position.set(xPos - side * 11.5, 4.2, z);
+        awn.castShadow = true;
+        this.scene.add(awn);
+
+        // Windows on street-facing sides (instanced)
+        const baseFaceX = xPos - side * 10;
+        for (let r = 0; r < Math.floor((h1 - 6) / 3); r++) {
+          for (let c = -4; c <= 4; c++) addWin(baseFaceX, 7 + r * 3, z + c * 4);
+        }
+        const towerFaceX = xPos - side * 8;
+        for (let r = 0; r < Math.floor((h2 - 3) / 3.5); r++) {
+          for (let c = -3; c <= 3; c++) addWin(towerFaceX, h1 + 3 + r * 3.5, z + c * 4);
+        }
       }
     }
 
-    for (let z = -270; z <= 270; z += 16) {
-      this.addBox(
-        0, 0.105, z,
-        0.16, 0.025, 7,
-        this.m.yellow,
-        { castShadow: false }
-      );
-    }
+    const wins = new THREE.InstancedMesh(winGeo, winMat, winMatrices.length);
+    winMatrices.forEach((m, i) => wins.setMatrixAt(i, m));
+    wins.instanceMatrix.needsUpdate = true;
+    this.scene.add(wins);
+  }
 
-    for (let z = -250; z <= 250; z += 35) {
-      this.addCylinder(
-        -9, 0.105, z,
-        0.75, 0.75, 0.035,
-        this.m.darkMetal,
-        16
-      );
+  // ---------- Scaffolding on a few street frontages ----------
+  buildScaffolding() {
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0x6b6b6b });
+    const plankMat = new THREE.MeshLambertMaterial({ color: 0x9c7b4a });
+    const spots = [[-1, -100], [1, 50], [-1, 100], [1, -150]];
+    const poleGeo = new THREE.BoxGeometry(0.15, 12, 0.15);
+    const plankGeo = new THREE.BoxGeometry(2, 0.15, 12);
+
+    for (const [side, z] of spots) {
+      const x = side * 21.3;
+      for (const dz of [-6, 0, 6]) {
+        for (const dx of [-0.9, 0.9]) {
+          const p = new THREE.Mesh(poleGeo, poleMat);
+          p.position.set(x + dx, 6, z + dz);
+          p.castShadow = true;
+          this.scene.add(p);
+        }
+      }
+      for (const y of [4, 8, 12]) {
+        const pl = new THREE.Mesh(plankGeo, plankMat);
+        pl.position.set(x, y, z);
+        pl.castShadow = true;
+        this.scene.add(pl);
+      }
+      // One collider for the whole frame
+      this.addCollider(x, 6, z, 2, 12, 12, null);
     }
   }
 
-  // BUILDINGS
+  // ---------- Dumpsters and crates in the alleys ----------
+  buildAlleyProps() {
+    const dumpMat = new THREE.MeshLambertMaterial({ color: 0x2f5d3a });
+    const crateMat = new THREE.MeshLambertMaterial({ color: 0x8a6a3c });
+    for (let z = -125; z <= 125; z += 50) {
+      for (const side of [-1, 1]) {
+        const x = side * 28;
+        const d = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.5, 1.4), dumpMat);
+        d.position.set(x, 0.75, z - 2);
+        d.castShadow = true; d.receiveShadow = true;
+        this.scene.add(d);
+        this.addCollider(x, 0.75, z - 2, 2.4, 1.5, 1.4, d);
 
-  createBuildings() {
-    const rows = [-245, -175, -105, -35, 35, 105, 175, 245];
-
-    for (const side of [-1, 1]) {
-      rows.forEach((z, index) => {
-        const width = 21 + (index % 3) * 2;
-        const depth = 47 + (index % 2) * 5;
-        const height = 34 + (
-          (index * 17 + (side === 1 ? 13 : 4)) % 48
-        );
-
-        this.createBuilding(
-          side * 34,
-          z,
-          width,
-          depth,
-          height,
-          index + (side === 1 ? 10 : 0)
-        );
-      });
-    }
-
-    for (const side of [-1, 1]) {
-      for (let i = 0; i < 7; i++) {
-        this.createBuilding(
-          side * 88,
-          -210 + i * 70,
-          35 + (i % 2) * 8,
-          49,
-          30 + ((i * 19) % 45),
-          i + 20
-        );
-      }
-    }
-
-    for (const side of [-1, 1]) {
-      for (let i = 0; i < 5; i++) {
-        this.createBuilding(
-          side * 145,
-          -180 + i * 90,
-          50,
-          65,
-          48 + (i % 3) * 22,
-          i + 40
-        );
+        const c = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), crateMat);
+        c.position.set(x + side * 4, 0.6, z + 3);
+        c.castShadow = true; c.receiveShadow = true;
+        this.scene.add(c);
+        this.addCollider(x + side * 4, 0.6, z + 3, 1.2, 1.2, 1.2, c);
       }
     }
   }
 
-  createBuilding(x, z, width, depth, height, seed) {
-    const material = this.m.buildings[
-      Math.abs(seed) % this.m.buildings.length
-    ];
-
-    const main = this.addBox(
-      x,
-      height / 2,
-      z,
-      width,
-      height,
-      depth,
-      material,
-      { collider: true }
-    );
-
-    main.name = `BUILDING_${seed}`;
-
-    this.buildings.push({
-      x, z, width, depth, height, seed
+  // ---------- Parked cars (keeps spawn and center lanes clear) ----------
+  buildCars() {
+    const colors = [0xd23b3b, 0x2f5fd0, 0xe8e8e8, 0x222222, 0xe6c229, 0x3b9d5a];
+    const glass = new THREE.MeshLambertMaterial({ color: 0x1b2a38 });
+    const bodyGeo = new THREE.BoxGeometry(2, 0.8, 4.4);
+    const cabGeo = new THREE.BoxGeometry(1.8, 0.7, 2.2);
+    const zs = [-130, -105, -80, -45, -25, 40, 65, 90, 115, 140];
+    zs.forEach((z, i) => {
+      const x = (i % 2 === 0 ? -1 : 1) * 9.8;
+      const mat = new THREE.MeshLambertMaterial({ color: colors[i % colors.length] });
+      const body = new THREE.Mesh(bodyGeo, mat);
+      body.position.set(x, 0.7, z);
+      body.castShadow = true; body.receiveShadow = true;
+      this.scene.add(body);
+      const cab = new THREE.Mesh(cabGeo, glass);
+      cab.position.set(x, 1.45, z - 0.2);
+      cab.castShadow = true;
+      this.scene.add(cab);
+      this.addCollider(x, 0.85, z, 2, 1.7, 4.4, body);
     });
-
-    // Roof parapet
-    this.addBox(
-      x, height + 0.6, z,
-      width + 0.5, 1.2, depth + 0.5,
-      this.m.roof
-    );
-
-    // Layered rooftop setback
-    if (height > 48) {
-      const sw = width * 0.65;
-      const sd = depth * 0.68;
-      const sh = 5 + (seed % 4);
-
-      this.addBox(
-        x + 1.5,
-        height + sh / 2,
-        z - 2,
-        sw, sh, sd,
-        material
-      );
-
-      this.addBox(
-        x + 1.5,
-        height + sh + 0.5,
-        z - 2,
-        sw + 0.4, 1, sd + 0.4,
-        this.m.roof
-      );
-    }
-
-    // Shopfront
-    const frontX = x - Math.sign(x) * (width / 2 + 0.03);
-
-    this.addBox(
-      frontX, 2, z,
-      0.12, 3.6, depth * 0.65,
-      this.m.darkMetal
-    );
-
-    this.addBox(
-      frontX - Math.sign(x) * 0.09,
-      4.1, z,
-      0.15, 0.55, depth * 0.45,
-      this.m.rust
-    );
   }
 
-  // WINDOWS USING INSTANCED MESHES
+  // ---------- Streetlights ----------
+  buildStreetlights() {
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
+    const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff2c0 });
+    const poleGeo = new THREE.CylinderGeometry(0.15, 0.2, 10, 8);
+    const armGeo = new THREE.BoxGeometry(4, 0.2, 0.2);
+    const lampGeo = new THREE.BoxGeometry(0.8, 0.2, 0.5);
+    for (let z = -140; z <= 140; z += 40) {
+      for (const x of [-14, 14]) {
+        const pole = new THREE.Mesh(poleGeo, poleMat);
+        pole.position.set(x, 5, z);
+        pole.castShadow = true;
+        this.scene.add(pole);
 
-  createWindows() {
-    const geometry = new THREE.BoxGeometry(1.05, 1.35, 0.13);
-    const darkMatrices = [];
-    const litMatrices = [];
+        const arm = new THREE.Mesh(armGeo, poleMat);
+        arm.position.set(x - Math.sign(x) * 2, 9.8, z);
+        this.scene.add(arm);
 
-    for (const b of this.buildings) {
-      const floors = Math.max(2, Math.floor(b.height / 4.2));
-      const columns = Math.max(2, Math.floor(b.depth / 4.5));
+        const lamp = new THREE.Mesh(lampGeo, lampMat);
+        lamp.position.set(x - Math.sign(x) * 3.8, 9.6, z);
+        this.scene.add(lamp);
 
-      for (let floor = 1; floor < floors; floor++) {
-        const y = floor * 4 + 1.5;
-
-        for (let c = 0; c < columns; c++) {
-          const z = b.z - b.depth / 2 + 3 + c * 4.2;
-
-          for (const side of [-1, 1]) {
-            this.dummy.position.set(
-              b.x + side * (b.width / 2 + 0.075),
-              y,
-              z
-            );
-
-            this.dummy.rotation.set(0, Math.PI / 2, 0);
-            this.dummy.updateMatrix();
-
-            const target = (c + floor + b.seed) % 9 === 0
-              ? litMatrices
-              : darkMatrices;
-
-            target.push(this.dummy.matrix.clone());
-          }
-        }
-
-        for (const side of [-1, 1]) {
-          const wx = b.x - b.width / 2 + 3 + side * 1.5;
-
-          this.dummy.position.set(
-            wx,
-            y,
-            b.z - Math.sign(b.z || 1) * (b.depth / 2 + 0.075)
-          );
-
-          this.dummy.rotation.set(0, 0, 0);
-          this.dummy.updateMatrix();
-
-          darkMatrices.push(this.dummy.matrix.clone());
-        }
+        this.addCollider(x, 5, z, 0.4, 10, 0.4, pole);
       }
     }
-
-    this.addInstancedWindows(geometry, this.m.window, darkMatrices);
-    this.addInstancedWindows(geometry, this.m.windowLit, litMatrices);
   }
 
-  addInstancedWindows(geometry, material, matrices) {
-    if (!matrices.length) return;
+  // ---------- Invisible world bounds ----------
+  buildBounds() {
+    this.addCollider(0, 25, -197.5, 400, 50, 5, null);
+    this.addCollider(0, 25, 197.5, 400, 50, 5, null);
+    this.addCollider(-197.5, 25, 0, 5, 50, 400, null);
+    this.addCollider(197.5, 25, 0, 5, 50, 400, null);
+  }
 
-    const mesh = new THREE.InstancedMesh(
-      geometry,
-      material,
-      matrices.length
-    );
-
-    matrices.forEach((matrix, index) => {
-      mesh.setMatrixAt(index, matrix);
+  addCollider(x, y, z, width, height, depth, mesh) {
+    this.colliders.push({
+      min: new THREE.Vector3(x - width / 2, 0, z - depth / 2),
+      max: new THREE.Vector3(x + width / 2, height, z + depth / 2),
+      mesh: mesh
     });
-
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.castShadow = false;
-    mesh.receiveShadow = true;
-
-    this.group.add(mesh);
-  }
-
-  // FIRE ESCAPES
-
-  createFireEscapes() {
-    const selected = this.buildings.filter(
-      (b, i) => i % 3 === 0 && b.height > 28
-    );
-
-    for (const b of selected) {
-      const x = b.x - Math.sign(b.x) * (b.width / 2 + 0.8);
-      const levels = Math.min(5, Math.floor((b.height - 5) / 7));
-
-      for (let floor = 1; floor <= levels; floor++) {
-        const y = floor * 7;
-
-        this.addBox(
-          x, y, b.z,
-          1.8, 0.18, 8,
-          this.m.metal
-        );
-
-        this.addBox(
-          x - Math.sign(b.x) * 0.8,
-          y + 0.55, b.z,
-          0.12, 1.1, 8,
-          this.m.darkMetal
-        );
-
-        for (const side of [-1, 1]) {
-          this.addBox(
-            x, y + 0.55, b.z + side * 3.9,
-            1.8, 1.1, 0.12,
-            this.m.darkMetal
-          );
-        }
-      }
-
-      this.addBox(
-        x - Math.sign(b.x),
-        b.height / 2,
-        b.z,
-        0.12, b.height, 0.12,
-        this.m.rust
-      );
-    }
-  }
-
-  // ROOFTOP AIR CONDITIONING
-
-  createRooftopEquipment() {
-    for (const b of this.buildings) {
-      const count = 1 + (b.seed % 3);
-
-      for (let i = 0; i < count; i++) {
-        const x = b.x + (i - 1) * 3;
-        const z = b.z + (i % 2) * 5;
-
-        this.addBox(
-          x, b.height + 1.8, z,
-          2.5, 2.2, 2.1,
-          this.m.metal
-        );
-
-        this.addBox(
-          x, b.height + 3, z,
-          1.6, 0.3, 1.5,
-          this.m.darkMetal
-        );
-      }
-    }
-  }
-
-  // STREET FURNITURE
-
-  createStreetFurniture() {
-    for (let z = -230; z <= 230; z += 35) {
-      for (const side of [-1, 1]) {
-        const x = side * 21.5;
-
-        this.addBox(
-          x, 0.85, z,
-          1.1, 1.7, 1,
-          this.m.darkMetal
-        );
-
-        this.addBox(
-          side * 18.8, 0.75, z + 5,
-          2.5, 0.25, 0.8,
-          this.m.rust
-        );
-
-        for (const offset of [-0.9, 0.9]) {
-          this.addBox(
-            side * 18.8 + offset,
-            0.35, z + 5,
-            0.15, 0.7, 0.15,
-            this.m.darkMetal
-          );
-        }
-      }
-    }
-
-    for (let z = -200; z <= 200; z += 65) {
-      this.addBox(
-        -12.5, 0.7, z,
-        1.1, 1.4, 2.2,
-        this.m.concrete
-      );
-    }
-  }
-
-  // STREETLIGHTS
-
-  createStreetLights() {
-    for (let z = -245; z <= 245; z += 55) {
-      for (const side of [-1, 1]) {
-        const x = side * 12.5;
-
-        this.addCylinder(
-          x, 5, z,
-          0.12, 0.18, 10,
-          this.m.darkMetal,
-          8
-        );
-
-        this.addBox(
-          x + side, 9.7, z,
-          2.1, 0.15, 0.15,
-          this.m.darkMetal
-        );
-
-        this.addBox(
-          x + side * 1.9, 9.35, z,
-          0.8, 0.3, 0.65,
-          this.m.yellow
-        );
-      }
-    }
-  }
-
-  // TRAFFIC SIGNALS
-
-  createTrafficSignals() {
-    for (const z of [-140, 0, 140]) {
-      for (const side of [-1, 1]) {
-        const x = side * 13.5;
-
-        this.addCylinder(
-          x, 4, z,
-          0.09, 0.12, 8,
-          this.m.darkMetal,
-          8
-        );
-
-        this.addBox(
-          x, 7.7, z + 1,
-          0.65, 1.7, 0.55,
-          this.m.black
-        );
-
-        this.addBox(
-          x, 8.1, z + 1.29,
-          0.25, 0.25, 0.08,
-          this.m.red
-        );
-
-        this.addBox(
-          x, 7.7, z + 1.29,
-          0.25, 0.25, 0.08,
-          this.m.yellow
-        );
-
-        this.addBox(
-          x, 7.3, z + 1.29,
-          0.25, 0.25, 0.08,
-          this.m.green
-        );
-      }
-    }
-  }
-
-  // PARKED VEHICLES
-
-  createVehicles() {
-    const colors = [
-      this.m.blue,
-      this.m.white,
-      this.m.red,
-      this.m.green,
-      this.m.darkMetal
-    ];
-
-    for (let i = 0; i < 12; i++) {
-      const side = i % 2 === 0 ? -1 : 1;
-      const z = -220 + Math.floor(i / 2) * 75;
-      const x = side * 10.5;
-
-      this.createCar(
-        x,
-        z,
-        colors[i % colors.length],
-        i % 3 === 0
-      );
-    }
-  }
-
-  createCar(x, z, color, damaged = false) {
-    const body = this.addBox(
-      x, 0.85, z,
-      2.2, 1, 4.4,
-      color,
-      { collider: true }
-    );
-
-    body.name = 'PARKED_CAR';
-
-    this.addBox(
-      x, 1.55, z - 0.15,
-      1.85, 0.65, 2.35,
-      this.m.darkMetal
-    );
-
-    this.addBox(
-      x, 1.62, z - 1.38,
-      1.65, 0.5, 0.08,
-      this.m.window
-    );
-
-    this.addBox(
-      x, 1.62, z + 1.12,
-      1.65, 0.5, 0.08,
-      this.m.window
-    );
-
-    for (const dx of [-1.05, 1.05]) {
-      for (const dz of [-1.35, 1.35]) {
-        const wheel = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.42, 0.42, 0.22, 10),
-          this.wheelMaterial
-        );
-
-        wheel.rotation.z = Math.PI / 2;
-        wheel.position.set(x + dx, 0.55, z + dz);
-        wheel.castShadow = true;
-
-        this.group.add(wheel);
-      }
-    }
-
-    if (damaged) {
-      this.addBox(
-        x + 0.2, 1.9, z,
-        0.5, 0.15, 0.7,
-        this.m.rust
-      );
-    }
-  }
-
-  // DUMPSTERS
-
-  createDumpsters() {
-    const positions = [
-      [-24, -175],
-      [24, -105],
-      [-24, 35],
-      [24, 175],
-      [-24, 245]
-    ];
-
-    for (const [x, z] of positions) {
-      this.addBox(
-        x, 1, z,
-        3, 2, 1.8,
-        this.m.green,
-        { collider: true }
-      );
-
-      this.addBox(
-        x, 2.1, z,
-        3.1, 0.2, 1.9,
-        this.m.darkMetal
-      );
-    }
-  }
-
-  // DISTANT CITY SKYLINE
-
-  createDistantBuildings() {
-    for (const side of [-1, 1]) {
-      for (let i = 0; i < 12; i++) {
-        const x = side * (205 + (i % 3) * 22);
-        const z = -250 + i * 42;
-        const height = 55 + (i * 13) % 70;
-
-        this.addBox(
-          x, height / 2, z,
-          28, height, 32,
-          this.m.buildings[i % this.m.buildings.length]
-        );
-      }
-    }
-  }
-
-  // STAGE API
-
-  setStage(stage) {
-    this.stage = Math.max(1, Math.min(3, stage));
-
-    for (const group of this.stageGroups) {
-      group.visible = true;
-    }
-  }
-
-  // CLEANUP
-
-  dispose() {
-    this.scene.remove(this.group);
-    this.scene.remove(this.sun);
-    this.scene.remove(this.sun?.target);
-    this.scene.remove(this.hemisphere);
-
-    this.group.traverse(object => {
-      if (object.isInstancedMesh) {
-        object.dispose();
-      }
-    });
-
-    for (const geometry of this.geometryCache.values()) {
-      geometry.dispose();
-    }
-
-    this.geometryCache.clear();
-    this.colliders.length = 0;
   }
 }
