@@ -4,8 +4,8 @@ import * as THREE from 'three';
 // mode 'fps': attach to the camera, gun shows bottom-right of screen.
 // mode 'tps': attach to the player's mesh/group, gun sits at the right hand.
 export default class Gun {
-  constructor(parent, mode = 'fps') {
-    this.mode = mode;
+  constructor(camera, scene) {
+    const parent = camera;
     this.group = new THREE.Group();
     this.recoilKick = 0;
     this.flashTimer = 0;
@@ -59,18 +59,30 @@ export default class Gun {
     this.flash.visible = false;
     this.group.add(this.flash);
 
-    this.group.traverse((o) => { if (o.isMesh && o !== this.flash) o.castShadow = true; });
+    // Always draw on top, never culled, never clipped by the near plane
+    this.group.traverse((o) => {
+      if (o.isMesh) {
+        o.frustumCulled = false;
+        o.renderOrder = 999;
+        o.castShadow = false;
+      }
+    });
 
-    // Resting position per mode
-    if (mode === 'fps') {
-      this.base = new THREE.Vector3(0.22, -0.2, -0.45);
-      this.group.scale.setScalar(1);
-    } else {
-      this.base = new THREE.Vector3(0.35, 1.0, -0.35); // right hand height, in front of body
-      this.group.scale.setScalar(1.6);
-    }
+    // First-person position (relative to the camera): right, down, forward
+    this.base = new THREE.Vector3(0.25, -0.22, -0.55);
     this.group.position.copy(this.base);
-    parent.add(this.group);
+
+    // Make sure the camera is in the scene, otherwise its children never render
+    const camera = parent;
+    camera.near = 0.05;
+    camera.updateProjectionMatrix();
+    camera.add(this.group);
+    if (!camera.parent && scene) scene.add(camera);
+
+    // Small light on the camera so the gun is never dark
+    const light = new THREE.PointLight(0xffffff, 0.8, 3);
+    light.position.set(0, 0.2, 0.3);
+    camera.add(light);
   }
 
   // Call when the player fires
