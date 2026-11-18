@@ -1,156 +1,254 @@
 import * as THREE from 'three';
+import { Weapon } from './Weapon.js';
 
 export class Player {
   constructor(scene) {
     this.scene = scene;
-    this.position = new THREE.Vector3(0, 1.0, 10);
-    this.velocityY = 0;
-    this.onGround = true;
-    this.radius = 0.45;
-    this.height = 1.0;
-    
-    // Snappy speeds
-    this.speed = 9.0; 
-    this.aimSpeed = 4.5; 
-    this.jumpPower = 7.5;
-    this.gravity = -25;
 
     this.group = new THREE.Group();
+    this.group.position.set(0, 0, 0);
+    this.scene.add(this.group);
 
-    // Character Model
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x222833 });
-    const headMat = new THREE.MeshLambertMaterial({ color: 0xd1b8a5 });
-    const vestMat = new THREE.MeshLambertMaterial({ color: 0x3a4a2a });
+    this.isAiming = false;
+    this.aimBlend = 0;
+    this.walkTime = 0;
 
-    this.headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 0.32), headMat);
-    this.headMesh.position.y = 0.75;
-    this.headMesh.castShadow = true;
-    this.group.add(this.headMesh);
-    
-    this.hairMesh = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), new THREE.MeshLambertMaterial({ color: 0x111111 }));
-    this.hairMesh.position.set(0, 0.9, -0.02);
-    this.group.add(this.hairMesh);
+    const skin = new THREE.MeshStandardMaterial({
+      color: 0xb98b68,
+      roughness: 0.9
+    });
 
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.85, 0.4), bodyMat);
-    torso.position.y = 0.15;
-    torso.castShadow = true;
-    this.group.add(torso);
+    const shirt = new THREE.MeshStandardMaterial({
+      color: 0x343b35,
+      roughness: 0.95
+    });
 
-    const vest = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.65, 0.45), vestMat);
-    vest.position.y = 0.2;
-    this.group.add(vest);
+    const pants = new THREE.MeshStandardMaterial({
+      color: 0x252a29,
+      roughness: 0.95
+    });
 
-    this.leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.65, 0.18), bodyMat);
-    this.leftArm.position.set(-0.42, 0.15, 0);
-    this.leftArm.castShadow = true;
+    const boot = new THREE.MeshStandardMaterial({
+      color: 0x171817
+    });
+
+    const createPart = (geometry, material, parent, x, y, z) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    };
+
+    // BODY
+    this.torso = createPart(
+      new THREE.BoxGeometry(0.65, 0.85, 0.35),
+      shirt,
+      this.group,
+      0, 1.25, 0
+    );
+
+    // HEAD
+    this.headMesh = createPart(
+      new THREE.BoxGeometry(0.32, 0.34, 0.32),
+      skin,
+      this.group,
+      0, 1.85, 0
+    );
+
+    this.hairMesh = createPart(
+      new THREE.BoxGeometry(0.34, 0.1, 0.34),
+      boot,
+      this.group,
+      0, 2.05, -0.02
+    );
+
+    // LEFT ARM
+    this.leftArm = new THREE.Group();
+    this.leftArm.position.set(-0.42, 1.58, 0);
     this.group.add(this.leftArm);
 
-    this.rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.65, 0.18), bodyMat);
-    this.rightArm.position.set(0.42, 0.15, 0);
-    this.rightArm.castShadow = true;
+    createPart(
+      new THREE.BoxGeometry(0.19, 0.55, 0.2),
+      shirt,
+      this.leftArm,
+      0, -0.25, 0
+    );
+
+    createPart(
+      new THREE.BoxGeometry(0.17, 0.17, 0.18),
+      skin,
+      this.leftArm,
+      0, -0.58, 0
+    );
+
+    // RIGHT ARM - PIVOT AT SHOULDER
+    this.rightArm = new THREE.Group();
+    this.rightArm.position.set(0.42, 1.58, 0);
     this.group.add(this.rightArm);
 
-    const legMat = new THREE.MeshLambertMaterial({ color: 0x15181d });
-    this.leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.26), legMat);
-    this.leftLeg.position.set(-0.18, -0.5, 0);
-    this.leftLeg.castShadow = true;
+    this.rightArmMesh = createPart(
+      new THREE.BoxGeometry(0.2, 0.55, 0.2),
+      shirt,
+      this.rightArm,
+      0, -0.25, 0
+    );
+
+    // Hand anchor at the bottom of the arm.
+    this.rightHand = new THREE.Group();
+    this.rightHand.position.set(0, -0.57, -0.015);
+    this.rightArm.add(this.rightHand);
+
+    this.rightHandMesh = createPart(
+      new THREE.BoxGeometry(0.19, 0.17, 0.2),
+      skin,
+      this.rightHand,
+      0, -0.015, 0
+    );
+
+    // LEGS
+    this.leftLeg = new THREE.Group();
+    this.leftLeg.position.set(-0.19, 0.82, 0);
     this.group.add(this.leftLeg);
 
-    this.rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.26), legMat);
-    this.rightLeg.position.set(0.18, -0.5, 0);
-    this.rightLeg.castShadow = true;
+    createPart(
+      new THREE.BoxGeometry(0.25, 0.75, 0.28),
+      pants,
+      this.leftLeg,
+      0, -0.36, 0
+    );
+
+    createPart(
+      new THREE.BoxGeometry(0.27, 0.16, 0.38),
+      boot,
+      this.leftLeg,
+      0, -0.79, -0.04
+    );
+
+    this.rightLeg = new THREE.Group();
+    this.rightLeg.position.set(0.19, 0.82, 0);
     this.group.add(this.rightLeg);
 
-    this.group.position.copy(this.position);
-    scene.add(this.group);
+    createPart(
+      new THREE.BoxGeometry(0.25, 0.75, 0.28),
+      pants,
+      this.rightLeg,
+      0, -0.36, 0
+    );
+
+    createPart(
+      new THREE.BoxGeometry(0.27, 0.16, 0.38),
+      boot,
+      this.rightLeg,
+      0, -0.79, -0.04
+    );
+
+    // WEAPON ATTACHED DIRECTLY TO RIGHT HAND
+    this.weapon = new Weapon(this.rightHand);
+
+    this.position = this.group.position;
+    this.velocity = new THREE.Vector3();
+
+    this.group.traverse(obj => {
+      if (obj.isMesh) {
+        obj.frustumCulled = false;
+      }
+    });
   }
 
   update(dt, input, cameraYaw, colliders, cameraPitch = 0.28) {
-    const isAiming = input.isAiming();
-    const currentSpeed = isAiming ? this.aimSpeed : this.speed;
+    dt = Math.min(dt || 0, 0.05);
 
-    // Subtle head movement follows the camera vertically.
-    // The torso and legs remain upright.
-    const headTilt = THREE.MathUtils.clamp(
-      -cameraPitch * 0.22,
-      -0.20,
-      0.20
+    // Aim input: right mouse button or C.
+    const aimInput =
+      input?.mouseButtons?.[2] ||
+      input?.rightMouse ||
+      input?.aim ||
+      input?.keys?.KeyC ||
+      input?.keys?.c ||
+      false;
+
+    this.isAiming = Boolean(aimInput);
+
+    const targetAim = this.isAiming ? 1 : 0;
+
+    this.aimBlend = THREE.MathUtils.damp(
+      this.aimBlend,
+      targetAim,
+      12,
+      dt
     );
-    this.headMesh.rotation.x +=
-      (headTilt - this.headMesh.rotation.x) * Math.min(1, dt * 8);
-    this.hairMesh.rotation.x = this.headMesh.rotation.x;
 
-    // Animate Arms
-    const targetArmX = isAiming ? -Math.PI / 2 : 0;
-    this.leftArm.rotation.x += (targetArmX - this.leftArm.rotation.x) * Math.min(1, dt * 20);
-    this.rightArm.rotation.x += (targetArmX - this.rightArm.rotation.x) * Math.min(1, dt * 20);
-
-    const forward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
-    const right = new THREE.Vector3(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
-
-    const move = new THREE.Vector3();
-    if (input.keys['KeyW']) move.add(forward);
-    if (input.keys['KeyS']) move.sub(forward);
-    if (input.keys['KeyD']) move.add(right);
-    if (input.keys['KeyA']) move.sub(right);
-
-    if (move.lengthSq() > 0) {
-      move.normalize().multiplyScalar(currentSpeed * dt);
-      this.tryMove(move.x, 0, colliders);
-      this.tryMove(0, move.z, colliders);
-      
-      if (!isAiming) {
-        const targetYaw = Math.atan2(move.x, move.z);
-        let dy = targetYaw - this.group.rotation.y;
-        while (dy > Math.PI) dy -= Math.PI * 2;
-        while (dy < -Math.PI) dy += Math.PI * 2;
-        // Fast turn speed for snappy movement
-        this.group.rotation.y += dy * Math.min(1, dt * 18); 
-      }
+    // Character faces camera direction.
+    if (typeof cameraYaw === 'number') {
+      this.group.rotation.y = cameraYaw;
     }
 
-    if (isAiming) {
-      const targetYaw = cameraYaw + Math.PI; 
-      let dy = targetYaw - this.group.rotation.y;
-      while (dy > Math.PI) dy -= Math.PI * 2;
-      while (dy < -Math.PI) dy += Math.PI * 2;
-      this.group.rotation.y += dy * Math.min(1, dt * 25); // Instant snap while aiming
-    }
+    // Raise right arm when aiming.
+    const relaxedArmRotation = -0.18;
+    const aimingArmRotation = -0.95;
 
-    if (input.keys['Space'] && this.onGround) {
-      this.velocityY = this.jumpPower;
-      this.onGround = false;
-    }
+    this.rightArm.rotation.x = THREE.MathUtils.lerp(
+      relaxedArmRotation,
+      aimingArmRotation,
+      this.aimBlend
+    );
 
-    this.velocityY += this.gravity * dt;
-    this.position.y += this.velocityY * dt;
-    if (this.position.y <= this.height) {
-      this.position.y = this.height;
-      this.velocityY = 0;
-      this.onGround = true;
-    }
+    // Slightly rotate the arm forward while aiming.
+    this.rightArm.rotation.z = THREE.MathUtils.lerp(
+      -0.08,
+      0.04,
+      this.aimBlend
+    );
 
-    this.group.position.copy(this.position);
+    // Support camera pitch without breaking the hand attachment.
+    const pitch = THREE.MathUtils.clamp(
+      cameraPitch || 0,
+      -0.65,
+      0.65
+    );
+
+    this.rightArm.rotation.x -= pitch * this.aimBlend * 0.35;
+
+    // Left arm moves slightly forward while aiming.
+    this.leftArm.rotation.x = THREE.MathUtils.lerp(
+      0,
+      -0.65,
+      this.aimBlend
+    );
+
+    // Weapon follows hand automatically because it is parented.
+    this.weapon.update(dt, this.isAiming);
+
+    // Head movement.
+    this.headMesh.rotation.x = THREE.MathUtils.lerp(
+      0,
+      -pitch * 0.25,
+      this.aimBlend
+    );
+
+    // Walking animation.
+    this.walkTime += dt * 7;
+
+    if (!this.isAiming) {
+      this.leftLeg.rotation.x = Math.sin(this.walkTime) * 0.12;
+      this.rightLeg.rotation.x = -Math.sin(this.walkTime) * 0.12;
+    } else {
+      this.leftLeg.rotation.x = 0;
+      this.rightLeg.rotation.x = 0;
+    }
   }
 
-  tryMove(dx, dz, colliders) {
-    const nx = this.position.x + dx;
-    const nz = this.position.z + dz;
-    if (!this.collidesAt(nx, this.position.z, colliders)) this.position.x = nx;
-    if (!this.collidesAt(this.position.x, nz, colliders)) this.position.z = nz;
+  getWeapon() {
+    return this.weapon;
   }
 
-  collidesAt(x, z, colliders) {
-    const r = this.radius;
-    const feet = this.position.y - this.height + 0.1;
-    const headY = this.position.y + this.height;
-    for (const c of colliders) {
-      if (headY < c.min.y || feet > c.max.y) continue;
-      const cx = Math.max(c.min.x, Math.min(x, c.max.x));
-      const cz = Math.max(c.min.z, Math.min(z, c.max.z));
-      const ddx = x - cx, ddz = z - cz;
-      if (ddx * ddx + ddz * ddz < r * r) return true;
-    }
-    return false;
+  getPosition() {
+    return this.group.position;
+  }
+
+  dispose() {
+    this.scene.remove(this.group);
   }
 }
